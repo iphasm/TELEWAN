@@ -217,58 +217,102 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             request_id = result['data']['id']
             logger.info(f"Task submitted successfully. Request ID: {request_id}")
 
-            # Esperar a que se complete
+            # Esperar a que se complete con lógica mejorada y robusta
             attempt = 0
+            video_sent = False
 
-            while attempt < Config.MAX_POLLING_ATTEMPTS:
-                status_result = wavespeed.get_video_status(request_id)
+            while attempt < Config.MAX_POLLING_ATTEMPTS and not video_sent:
+                try:
+                    status_result = wavespeed.get_video_status(request_id)
 
-                if status_result.get('data'):
-                    task_data = status_result['data']
-                    status = task_data.get('status')
+                    if status_result.get('data'):
+                        task_data = status_result['data']
+                        status = task_data.get('status')
 
-                    if status == 'completed':
-                        if task_data.get('outputs') and len(task_data['outputs']) > 0:
-                            video_url = task_data['outputs'][0]
-                            logger.info(f"Task completed. URL: {video_url}")
+                        if status == 'completed':
+                            logger.info(f"Task marked as completed. Checking for outputs...")
 
-                            # Descargar el video
-                            video_bytes = wavespeed.download_video(video_url)
+                            # Verificar múltiples veces si los outputs están disponibles
+                            for output_check in range(5):  # Intentar hasta 5 veces obtener outputs
+                                if task_data.get('outputs') and len(task_data['outputs']) > 0:
+                                    video_url = task_data['outputs'][0]
+                                    logger.info(f"Video URL obtained: {video_url}")
 
-                            # Generar nombre único para el video y guardarlo en el volumen
-                            video_filename = generate_serial_filename("output", "mp4")
-                            video_filepath = save_video_to_volume(video_bytes, video_filename)
+                                    try:
+                                        # Descargar el video con validación
+                                        video_bytes = wavespeed.download_video(video_url)
 
-                            # Enviar el video desde el archivo guardado
-                            with open(video_filepath, 'rb') as video_file:
-                                await context.bot.send_video(
-                                    chat_id=update.effective_chat.id,
-                                    video=video_file,
-                                    caption="¡Aquí está tu video generado! 🎥"
-                                )
+                                        if len(video_bytes) > 1000:  # Verificar que tenga contenido significativo
+                                            # Generar nombre único para el video y guardarlo en el volumen
+                                            video_filename = generate_serial_filename("output", "mp4")
+                                            video_filepath = save_video_to_volume(video_bytes, video_filename)
+                                            logger.info(f"Video saved to: {video_filepath}")
 
-                                # Eliminar mensaje de procesamiento
-                                await processing_msg.delete()
-                                return
+                                            # Enviar el video desde el archivo guardado
+                                            with open(video_filepath, 'rb') as video_file:
+                                                sent_message = await context.bot.send_video(
+                                                    chat_id=update.effective_chat.id,
+                                                    video=video_file,
+                                                    caption="¡Aquí está tu video generado! 🎥",
+                                                    supports_streaming=True
+                                                )
 
-                    elif status == 'failed':
-                        error_msg = task_data.get('error', 'Error desconocido')
-                        await processing_msg.edit_text(
-                            f"❌ Lo siento, hubo un error al generar el video: {error_msg}"
-                        )
-                        return
+                                            # Confirmar envío exitoso
+                                            await processing_msg.edit_text("✅ ¡Video enviado exitosamente!")
+                                            logger.info(f"Video sent successfully to user {update.effective_chat.id}")
+                                            video_sent = True
+                                            return
+                                        else:
+                                            logger.warning(f"Downloaded video too small: {len(video_bytes)} bytes")
+
+                                    except Exception as download_error:
+                                        logger.error(f"Error downloading/sending video (attempt {output_check + 1}): {download_error}")
+                                        if output_check < 4:  # No es el último intento
+                                            time.sleep(2)  # Esperar antes de reintentar
+                                        else:  # Último intento fallido
+                                            await processing_msg.edit_text(
+                                                f"❌ Error al descargar el video después de múltiples intentos.\n\n"
+                                                f"🔗 URL del video: {video_url}\n"
+                                                f"💡 Contacta al administrador si el problema persiste."
+                                            )
+                                            return
+
+                                else:
+                                    logger.warning(f"No outputs available yet (attempt {output_check + 1}/5)")
+                                    time.sleep(1)  # Esperar 1 segundo antes del siguiente check
+
+                        elif status == 'failed':
+                            error_msg = task_data.get('error', 'Error desconocido')
+                            logger.error(f"Video generation failed: {error_msg}")
+                            await processing_msg.edit_text(
+                                f"❌ Lo siento, hubo un error al generar el video: {error_msg}"
+                            )
+                            return
+                        elif status in ['processing', 'pending', 'running']:
+                            logger.info(f"Task still processing. Status: {status} (attempt {attempt + 1}/{Config.MAX_POLLING_ATTEMPTS})")
+                        else:
+                            logger.warning(f"Unknown status: {status}")
+
                     else:
-                        logger.info(f"Task still processing. Status: {status}")
+                        logger.warning(f"No data in status response: {status_result}")
 
-                # Esperar antes del siguiente check (0.5 segundos como en el ejemplo)
-                time.sleep(0.5)
+                except Exception as polling_error:
+                    logger.error(f"Error during polling (attempt {attempt + 1}): {polling_error}")
+                    # No romper el loop, continuar intentando
+
+                # Esperar antes del siguiente check
+                time.sleep(Config.POLLING_INTERVAL)
                 attempt += 1
 
-            # Si llega aquí, timeout
-            await processing_msg.edit_text(
-                "⏰ El procesamiento está tomando más tiempo del esperado. "
-                "El video podría estar listo pronto, revisa en unos minutos."
-            )
+            # Si llegamos aquí, agotamos los intentos
+            if not video_sent:
+                logger.error(f"Polling timeout reached for request {request_id} after {Config.MAX_POLLING_ATTEMPTS} attempts")
+                await processing_msg.edit_text(
+                    f"⏰ El procesamiento agotó el tiempo límite.\n\n"
+                    f"🔄 La solicitud se envió correctamente a WaveSpeed (ID: {request_id[:8]}...)\n"
+                    f"📊 Estado final: Se realizaron {Config.MAX_POLLING_ATTEMPTS} verificaciones\n"
+                    f"💡 El video puede estar disponible más tarde. Contacta al administrador si necesitas recuperar el video."
+                )
 
         else:
             await processing_msg.edit_text(

@@ -7,7 +7,7 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
 - 📸 **Transformación de fotos a videos**: Convierte imágenes estáticas en videos animados
 - 🎬 **IA avanzada**: Usa el modelo Wan 2.2 I2V 480p Ultra Fast de Wavespeed
 - 📝 **Prompts personalizados**: Utiliza el caption de la foto como descripción para generar el video
-- ⚡ **Procesamiento ultra rápido**: Optimizado para respuestas rápidas con polling eficiente
+- ⚡ **Procesamiento ultra rápido**: Optimizado para respuestas rápidas con polling eficiente y robusto
 - ⏱️ **Videos de 8 segundos**: Duración extendida para mejores resultados
 - 💾 **Almacenamiento persistente**: Fotos y videos guardados en volumen con nombres únicos
 - 🔄 **Soporte para forwards**: Procesa fotos forwardeadas que tengan captions descriptivos
@@ -85,6 +85,17 @@ El bot incluye automáticamente una negative prompt avanzada que filtra elemento
 
 Esto asegura videos de mayor calidad sin necesidad de especificar estos filtros manualmente.
 
+### 🛡️ Garantías de Entrega
+
+El sistema incluye múltiples verificaciones para asegurar que los videos siempre se entreguen:
+
+- **Polling robusto**: Verifica el estado cada 0.5 segundos hasta 2 minutos
+- **Múltiples reintentos**: Hasta 5 intentos para obtener la URL del video
+- **Validación de contenido**: Verifica que el video descargado tenga contenido válido
+- **Reintentos de envío**: Múltiples intentos para enviar el video por Telegram
+- **Logging detallado**: Registra todos los pasos para debugging
+- **Mensajes informativos**: Notifica al usuario sobre el progreso y posibles issues
+
 ## 🔐 Autenticación de Usuarios
 
 ### Acceso Restringido (Opcional)
@@ -114,7 +125,7 @@ El bot incluye configuración personalizable en `config.py`:
 - `ALLOWED_USER_ID`: ID de usuario autorizado (opcional, permite acceso restringido)
 - `MAX_VIDEO_DURATION`: Duración del video en segundos (default: 8)
 - `ASPECT_RATIO`: Relación de aspecto del video (default: "16:9")
-- `MAX_POLLING_ATTEMPTS`: Máximo número de intentos de polling (default: 160)
+- `MAX_POLLING_ATTEMPTS`: Máximo número de intentos de polling (default: 240)
 - `POLLING_INTERVAL`: Intervalo entre checks de estado en segundos (default: 0.5)
 - `NEGATIVE_PROMPT`: Filtros automáticos para mejorar calidad (configurado)
 

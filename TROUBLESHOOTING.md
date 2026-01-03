@@ -189,3 +189,4 @@ Si los problemas persisten:
 - [ ] Logs sin errores críticos
 - [ ] Generación de videos funciona
 
+

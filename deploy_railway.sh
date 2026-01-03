@@ -38,3 +38,4 @@ echo "📊 Verificando despliegue..."
 railway status
 railway logs --follow
 
+

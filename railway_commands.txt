@@ -26,3 +26,4 @@ railway logs
 # 7. Ver logs en tiempo real
 railway logs --follow
 
+

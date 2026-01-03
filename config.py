@@ -18,7 +18,7 @@ class Config:
     # Configuración del bot
     MAX_VIDEO_DURATION = 8  # segundos
     ASPECT_RATIO = "16:9"
-    MAX_POLLING_ATTEMPTS = 160  # máximo ~1 minuto 20 segundos de espera (160 * 0.5s)
+    MAX_POLLING_ATTEMPTS = 240  # máximo ~2 minutos de espera (240 * 0.5s) - más tiempo para videos complejos
     POLLING_INTERVAL = 0.5  # segundos entre checks (como en el ejemplo)
 
     # Negative prompt automática para todas las solicitudes
