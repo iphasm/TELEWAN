@@ -103,7 +103,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         # Obtener información del archivo de la foto
         photo_file = await context.bot.get_file(photo.file_id)
-        photo_file_url = f"https://api.telegram.org/file/bot{Config.TELEGRAM_BOT_TOKEN}/{photo_file.file_path}"
+
+        # Construir URL correcta para la imagen
+        if photo_file.file_path.startswith('http'):
+            # file_path ya es una URL completa
+            photo_file_url = photo_file.file_path
+        else:
+            # file_path es relativo, construir URL completa
+            photo_file_url = f"https://api.telegram.org/file/bot{Config.TELEGRAM_BOT_TOKEN}/{photo_file.file_path}"
 
         # Descargar la foto para verificar que existe
         photo_bytes = await photo_file.download_as_bytearray()
