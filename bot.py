@@ -134,14 +134,25 @@ Envía una foto de un paisaje con el caption: "Un amanecer sobre las montañas c
     await update.message.reply_text(welcome_message, parse_mode='Markdown')
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Manejador de fotos enviadas"""
+    """Manejador de fotos enviadas (incluyendo forwards)"""
     try:
+        message = update.message
+
+        # Logging para debug
+        logger.info(f"Foto recibida - Forward: {bool(message.forward_origin)}, Caption: {bool(message.caption)}")
+
         # Verificar que hay un caption
-        if not update.message.caption:
-            await update.message.reply_text(
-                "❌ Por favor, incluye una descripción (caption) con tu foto para generar el video."
+        # El bot acepta tanto fotos enviadas directamente como forwards con caption
+        if not message.caption:
+            await message.reply_text(
+                "❌ Por favor, incluye una descripción (caption) con tu foto para generar el video.\n\n"
+                "💡 **Tip:** Si estás forwardeando una foto, asegúrate de que el mensaje original tenga un caption descriptivo."
             )
             return
+
+        # Información adicional para forwards
+        if message.forward_origin:
+            logger.info(f"Procesando foto forwardeada con caption: '{message.caption[:50]}...'")
 
         # Obtener la foto de mejor calidad
         photo = update.message.photo[-1]  # La última es la de mejor calidad

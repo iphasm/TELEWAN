@@ -10,6 +10,7 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
 - ⚡ **Procesamiento ultra rápido**: Optimizado para respuestas rápidas con polling eficiente
 - ⏱️ **Videos de 8 segundos**: Duración extendida para mejores resultados
 - 💾 **Almacenamiento persistente**: Fotos y videos guardados en volumen con nombres únicos
+- 🔄 **Soporte para forwards**: Procesa fotos forwardeadas que tengan captions descriptivos
 - 🔒 **Seguro**: Manejo adecuado de archivos y configuración
 
 ## 📋 Requisitos
@@ -54,10 +55,14 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
 
 ## 📸 Cómo usar el bot
 
-1. **Toma o selecciona una foto**
+1. **Toma o selecciona una foto** (o forwardea una foto existente)
 2. **Agrega un caption descriptivo** (esto será el prompt para generar el video)
 3. **Envía la foto al bot**
 4. **Espera** a que se procese (puede tomar 1-5 minutos)
+
+### 🔄 **Soporte para Forwards:**
+
+El bot también procesa fotos que forwardees de otros chats o canales, siempre y cuando tengan un caption descriptivo. Simplemente forwardea la foto con su caption al bot y este la procesará igual que una foto enviada directamente.
 
 ### 💡 Ejemplos de captions efectivos:
 
