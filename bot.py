@@ -197,28 +197,28 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     status = task_data.get('status')
 
                     if status == 'completed':
-                    if task_data.get('outputs') and len(task_data['outputs']) > 0:
-                        video_url = task_data['outputs'][0]
-                        logger.info(f"Task completed. URL: {video_url}")
+                        if task_data.get('outputs') and len(task_data['outputs']) > 0:
+                            video_url = task_data['outputs'][0]
+                            logger.info(f"Task completed. URL: {video_url}")
 
-                        # Descargar el video
-                        video_bytes = wavespeed.download_video(video_url)
+                            # Descargar el video
+                            video_bytes = wavespeed.download_video(video_url)
 
-                        # Generar nombre único para el video y guardarlo en el volumen
-                        video_filename = generate_serial_filename("output", "mp4")
-                        video_filepath = save_video_to_volume(video_bytes, video_filename)
+                            # Generar nombre único para el video y guardarlo en el volumen
+                            video_filename = generate_serial_filename("output", "mp4")
+                            video_filepath = save_video_to_volume(video_bytes, video_filename)
 
-                        # Enviar el video desde el archivo guardado
-                        with open(video_filepath, 'rb') as video_file:
-                            await context.bot.send_video(
-                                chat_id=update.effective_chat.id,
-                                video=video_file,
-                                caption="¡Aquí está tu video generado! 🎥"
-                            )
+                            # Enviar el video desde el archivo guardado
+                            with open(video_filepath, 'rb') as video_file:
+                                await context.bot.send_video(
+                                    chat_id=update.effective_chat.id,
+                                    video=video_file,
+                                    caption="¡Aquí está tu video generado! 🎥"
+                                )
 
-                            # Eliminar mensaje de procesamiento
-                            await processing_msg.delete()
-                            return
+                                # Eliminar mensaje de procesamiento
+                                await processing_msg.delete()
+                                return
 
                     elif status == 'failed':
                         error_msg = task_data.get('error', 'Error desconocido')
