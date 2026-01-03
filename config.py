@@ -13,9 +13,9 @@ class Config:
     WAVESPEED_BASE_URL = os.getenv('WAVESPEED_BASE_URL', 'https://api.wavespeed.ai')
 
     # Configuración del bot
-    MAX_VIDEO_DURATION = 5  # segundos
+    MAX_VIDEO_DURATION = 8  # segundos
     ASPECT_RATIO = "16:9"
-    MAX_POLLING_ATTEMPTS = 120  # máximo ~1 minuto de espera (120 * 0.5s)
+    MAX_POLLING_ATTEMPTS = 160  # máximo ~1 minuto 20 segundos de espera (160 * 0.5s)
     POLLING_INTERVAL = 0.5  # segundos entre checks (como en el ejemplo)
 
     # Almacenamiento (para Railway u otros servicios)
