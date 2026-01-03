@@ -8,6 +8,7 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
 - 🎬 **IA avanzada**: Usa el modelo Wan 2.2 I2V 480p Ultra Fast de Wavespeed
 - 📝 **Prompts personalizados**: Utiliza el caption de la foto como descripción para generar el video
 - ⚡ **Procesamiento ultra rápido**: Optimizado para respuestas rápidas con polling eficiente
+- ⏱️ **Videos de 8 segundos**: Duración extendida para mejores resultados
 - 🔒 **Seguro**: Manejo adecuado de archivos y configuración
 
 ## 📋 Requisitos
@@ -68,10 +69,10 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
 
 El bot incluye configuración personalizable en `config.py`:
 
-- `MAX_VIDEO_DURATION`: Duración del video en segundos (default: 5)
+- `MAX_VIDEO_DURATION`: Duración del video en segundos (default: 8)
 - `ASPECT_RATIO`: Relación de aspecto del video (default: "16:9")
-- `MAX_POLLING_ATTEMPTS`: Máximo número de intentos de polling (default: 30)
-- `POLLING_INTERVAL`: Intervalo entre checks de estado en segundos (default: 10)
+- `MAX_POLLING_ATTEMPTS`: Máximo número de intentos de polling (default: 160)
+- `POLLING_INTERVAL`: Intervalo entre checks de estado en segundos (default: 0.5)
 
 ## 🔧 Comandos disponibles
 
