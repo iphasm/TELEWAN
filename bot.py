@@ -5,6 +5,7 @@ import io
 import os
 import uuid
 from datetime import datetime
+from flask import Flask, request, jsonify
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from PIL import Image
@@ -357,6 +358,21 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
+def create_app():
+    """Crear aplicación Flask para webhooks y healthcheck"""
+    app = Flask(__name__)
+
+    # Healthcheck endpoint
+    @app.route('/', methods=['GET'])
+    def healthcheck():
+        return jsonify({
+            "status": "healthy",
+            "service": "TELEWAN Bot",
+            "timestamp": datetime.now().isoformat()
+        }), 200
+
+    return app
+
 def main() -> None:
     """Función principal"""
     try:
@@ -366,8 +382,13 @@ def main() -> None:
         return
 
     # Crear aplicación
-    if Config.USE_WEBHOOK and Config.WEBHOOK_URL:
-        logger.info("Configurando bot para usar WEBHOOKS")
+    if Config.USE_WEBHOOK:
+        logger.info("Configurando bot para usar WEBHOOKS con Flask")
+
+        # Crear aplicación Flask
+        app = create_app()
+
+        # Crear aplicación de Telegram
         application = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
 
         # Agregar manejadores
@@ -375,17 +396,59 @@ def main() -> None:
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-        # Configurar webhook
-        webhook_url = f"{Config.WEBHOOK_URL}{Config.WEBHOOK_PATH}"
-        logger.info(f"Configurando webhook en: {webhook_url}")
+        # Configurar webhook con Flask
+        webhook_path = Config.WEBHOOK_PATH
 
-        # Iniciar el servidor web para webhooks
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=Config.WEBHOOK_PORT,
-            webhook_url=webhook_url,
-            secret_token=os.getenv('WEBHOOK_SECRET_TOKEN')  # Opcional pero recomendado
-        )
+        @app.route(webhook_path, methods=['POST'])
+        def webhook_handler():
+            """Manejar webhooks de Telegram"""
+            try:
+                # Verificar secret token si está configurado
+                secret_token = os.getenv('WEBHOOK_SECRET_TOKEN')
+                if secret_token:
+                    received_token = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
+                    if received_token != secret_token:
+                        logger.warning("Invalid secret token received")
+                        return jsonify({"error": "Unauthorized"}), 401
+
+                # Procesar la actualización
+                update_data = request.get_json()
+                if update_data:
+                    update = Update.de_json(update_data, application.bot)
+                    application.process_update(update)
+                    return jsonify({"status": "ok"}), 200
+                else:
+                    return jsonify({"error": "No update data"}), 400
+
+            except Exception as e:
+                logger.error(f"Error processing webhook: {e}")
+                return jsonify({"error": "Internal server error"}), 500
+
+        # Configurar webhook URL en Telegram
+        if Config.WEBHOOK_URL:
+            webhook_url = f"{Config.WEBHOOK_URL}{webhook_path}"
+            logger.info(f"Webhook URL: {webhook_url}")
+
+            # Intentar configurar webhook en Telegram
+            try:
+                telegram_api_url = f"https://api.telegram.org/bot{Config.TELEGRAM_BOT_TOKEN}/setWebhook"
+                payload = {"url": webhook_url}
+                secret_token = os.getenv('WEBHOOK_SECRET_TOKEN')
+                if secret_token:
+                    payload["secret_token"] = secret_token
+
+                response = requests.post(telegram_api_url, json=payload, timeout=10)
+                if response.json().get("ok"):
+                    logger.info("✅ Webhook configurado exitosamente en Telegram")
+                else:
+                    logger.error(f"❌ Error configurando webhook: {response.json()}")
+            except Exception as e:
+                logger.error(f"Error configurando webhook: {e}")
+
+        # Iniciar servidor Flask
+        logger.info(f"🚀 Servidor iniciado en puerto {Config.WEBHOOK_PORT}")
+        app.run(host="0.0.0.0", port=Config.WEBHOOK_PORT, debug=False)
+
     else:
         logger.info("Configurando bot para usar POLLING")
         application = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
