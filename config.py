@@ -30,7 +30,8 @@ class Config:
     # Webhook configuration
     USE_WEBHOOK = os.getenv('USE_WEBHOOK', 'false').lower() == 'true'
     WEBHOOK_URL = os.getenv('WEBHOOK_URL')  # URL completa del webhook
-    WEBHOOK_PORT = int(os.getenv('WEBHOOK_PORT', '8443'))
+    # Railway asigna el puerto automáticamente mediante la variable PORT
+    WEBHOOK_PORT = int(os.getenv('PORT', os.getenv('WEBHOOK_PORT', '8443')))
     WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
 
     @classmethod

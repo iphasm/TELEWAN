@@ -403,6 +403,7 @@ def main() -> None:
         logger.info(f"WEBHOOK_URL: {Config.WEBHOOK_URL}")
         logger.info(f"WEBHOOK_PORT: {Config.WEBHOOK_PORT}")
         logger.info(f"WEBHOOK_PATH: {Config.WEBHOOK_PATH}")
+        logger.info(f"PORT env: {os.getenv('PORT', 'not set')}")
 
         # Crear aplicación Flask
         app = create_app()
