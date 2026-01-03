@@ -426,8 +426,13 @@ def main() -> None:
 
         # Configurar webhook URL en Telegram
         if Config.WEBHOOK_URL:
-            webhook_url = f"{Config.WEBHOOK_URL}{webhook_path}"
-            logger.info(f"Webhook URL: {webhook_url}")
+            # Asegurar que la URL tenga https://
+            webhook_base_url = Config.WEBHOOK_URL
+            if not webhook_base_url.startswith('http'):
+                webhook_base_url = f"https://{webhook_base_url}"
+
+            webhook_url = f"{webhook_base_url}{webhook_path}"
+            logger.info(f"Webhook URL completa: {webhook_url}")
 
             # Intentar configurar webhook en Telegram
             try:
@@ -438,10 +443,13 @@ def main() -> None:
                     payload["secret_token"] = secret_token
 
                 response = requests.post(telegram_api_url, json=payload, timeout=10)
-                if response.json().get("ok"):
+                result = response.json()
+                if result.get("ok"):
                     logger.info("✅ Webhook configurado exitosamente en Telegram")
+                    logger.info(f"📝 Descripción: {result.get('description', 'OK')}")
                 else:
-                    logger.error(f"❌ Error configurando webhook: {response.json()}")
+                    logger.error(f"❌ Error configurando webhook: {result}")
+                    logger.error(f"📝 Error details: {result.get('description', 'Unknown error')}")
             except Exception as e:
                 logger.error(f"Error configurando webhook: {e}")
 
