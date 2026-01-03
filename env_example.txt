@@ -1,0 +1,8 @@
+# Token del bot de Telegram (obtenlo de @BotFather en Telegram)
+TELEGRAM_BOT_TOKEN=tu_token_de_telegram_aqui
+
+# API Key de Wavespeed (obténla de https://wavespeed.ai)
+WAVESPEED_API_KEY=tu_api_key_de_wavespeed_aqui
+
+# URL base de la API de Wavespeed (opcional, valor por defecto ya configurado)
+WAVESPEED_BASE_URL=https://api.wavespeed.ai

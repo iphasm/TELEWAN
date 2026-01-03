@@ -1,0 +1,223 @@
+import logging
+import requests
+import time
+import io
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from PIL import Image
+from config import Config
+
+# Configuración del logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+class WavespeedAPI:
+    def __init__(self):
+        self.api_key = Config.WAVESPEED_API_KEY
+        self.base_url = Config.WAVESPEED_BASE_URL
+        self.headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'Content-Type': 'application/json'
+        }
+
+    def generate_video(self, prompt: str, image_url: str = None) -> dict:
+        """
+        Genera un video usando el modelo wan 2.2 480p fast
+        """
+        endpoint = f"{self.base_url}/v1/video/generate"
+
+        payload = {
+            "model": "wan-2.2-480p-fast",
+            "prompt": prompt,
+            "duration": Config.MAX_VIDEO_DURATION,
+            "aspect_ratio": Config.ASPECT_RATIO
+        }
+
+        if image_url:
+            payload["image_url"] = image_url
+
+        try:
+            response = requests.post(endpoint, json=payload, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error en la API de Wavespeed: {e}")
+            raise
+
+    def get_video_status(self, task_id: str) -> dict:
+        """
+        Obtiene el estado de una tarea de generación de video
+        """
+        endpoint = f"{self.base_url}/v1/video/status/{task_id}"
+
+        try:
+            response = requests.get(endpoint, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error obteniendo estado del video: {e}")
+            raise
+
+    def download_video(self, video_url: str) -> bytes:
+        """
+        Descarga el video generado
+        """
+        try:
+            response = requests.get(video_url)
+            response.raise_for_status()
+            return response.content
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error descargando video: {e}")
+            raise
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador del comando /start"""
+    welcome_message = """
+¡Hola! Soy un bot que transforma fotos en videos usando IA.
+
+📸 **Cómo usar:**
+1. Envía una foto con un caption descriptivo
+2. El bot usará el texto del caption como prompt para generar un video
+3. Espera a que se procese (puede tomar unos minutos)
+
+**Ejemplo:**
+Envía una foto de un paisaje con el caption: "Un amanecer sobre las montañas con nubes moviéndose suavemente"
+
+¡Prueba enviando una foto ahora!
+    """
+    await update.message.reply_text(welcome_message, parse_mode='Markdown')
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador de fotos enviadas"""
+    try:
+        # Verificar que hay un caption
+        if not update.message.caption:
+            await update.message.reply_text(
+                "❌ Por favor, incluye una descripción (caption) con tu foto para generar el video."
+            )
+            return
+
+        # Obtener la foto de mejor calidad
+        photo = update.message.photo[-1]  # La última es la de mejor calidad
+
+        # Descargar la foto
+        photo_file = await context.bot.get_file(photo.file_id)
+        photo_bytes = await photo_file.download_as_bytearray()
+
+        # Procesar la imagen (opcional, por si necesitamos redimensionar)
+        image = Image.open(io.BytesIO(photo_bytes))
+
+        # Enviar mensaje de procesamiento
+        processing_msg = await update.message.reply_text(
+            "🎬 Procesando tu imagen... Esto puede tomar unos minutos."
+        )
+
+        # Inicializar API de Wavespeed
+        wavespeed = WavespeedAPI(WAVESPEED_API_KEY)
+
+        # Generar video
+        prompt = update.message.caption
+        logger.info(f"Generando video con prompt: {prompt}")
+
+        # Llamar a la API
+        result = wavespeed.generate_video(prompt)
+
+        if 'task_id' in result:
+            task_id = result['task_id']
+
+            # Esperar a que se complete
+            attempt = 0
+
+            while attempt < Config.MAX_POLLING_ATTEMPTS:
+                status_result = wavespeed.get_video_status(task_id)
+
+                if status_result.get('status') == 'completed':
+                    video_url = status_result.get('video_url')
+                    if video_url:
+                        # Descargar y enviar el video
+                        video_bytes = wavespeed.download_video(video_url)
+
+                        await context.bot.send_video(
+                            chat_id=update.effective_chat.id,
+                            video=video_bytes,
+                            caption="¡Aquí está tu video generado! 🎥"
+                        )
+
+                        # Eliminar mensaje de procesamiento
+                        await processing_msg.delete()
+                        return
+
+                elif status_result.get('status') == 'failed':
+                    await processing_msg.edit_text(
+                        "❌ Lo siento, hubo un error al generar el video. Inténtalo de nuevo."
+                    )
+                    return
+
+                # Esperar antes del siguiente check
+                time.sleep(Config.POLLING_INTERVAL)
+                attempt += 1
+
+            # Si llega aquí, timeout
+            await processing_msg.edit_text(
+                "⏰ El procesamiento está tomando más tiempo del esperado. "
+                "El video podría estar listo pronto, revisa en unos minutos."
+            )
+
+        else:
+            await processing_msg.edit_text(
+                "❌ Error al iniciar la generación del video."
+            )
+
+    except Exception as e:
+        logger.error(f"Error procesando foto: {e}")
+        await update.message.reply_text(
+            "❌ Ocurrió un error inesperado. Por favor, inténtalo de nuevo."
+        )
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador del comando /help"""
+    help_text = """
+🤖 **Comandos disponibles:**
+
+/start - Inicia el bot y muestra instrucciones
+/help - Muestra esta ayuda
+
+📸 **Cómo generar videos:**
+- Envía una foto con un caption descriptivo
+- El bot usará el caption como prompt para crear un video con IA
+- Los videos se generan usando el modelo Wan 2.2 480p Fast
+
+💡 **Tips para mejores resultados:**
+- Sé específico en tu descripción
+- Incluye detalles sobre movimiento y estilo
+- Prueba con diferentes tipos de escenas
+
+¡Disfruta creando videos con IA! 🎬
+    """
+    await update.message.reply_text(help_text, parse_mode='Markdown')
+
+def main() -> None:
+    """Función principal"""
+    try:
+        Config.validate()
+    except ValueError as e:
+        logger.error(f"Error de configuración: {e}")
+        return
+
+    # Crear aplicación
+    application = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
+
+    # Agregar manejadores
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+
+    # Iniciar el bot
+    logger.info("Bot iniciado. Presiona Ctrl+C para detener.")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == '__main__':
+    main()
