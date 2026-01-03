@@ -35,14 +35,21 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
    # Token del bot de Telegram (obtenlo de @BotFather)
    TELEGRAM_BOT_TOKEN=tu_token_aqui
 
-   # ID de usuario autorizado (opcional - si no se configura, permite a todos)
-   ALLOWED_USER_ID=tu_user_id_aqui
+# ID de usuario autorizado (opcional - si no se configura, permite a todos)
+ALLOWED_USER_ID=tu_user_id_aqui
 
-   # API Key de Wavespeed
-   WAVESPEED_API_KEY=tu_api_key_aqui
+# API Key de Wavespeed
+WAVESPEED_API_KEY=tu_api_key_aqui
 
-   # URL base de la API de Wavespeed (opcional)
-   WAVESPEED_BASE_URL=https://api.wavespeed.ai
+# URL base de la API de Wavespeed (opcional)
+WAVESPEED_BASE_URL=https://api.wavespeed.ai
+
+# Modo Webhook (opcional - para mejor rendimiento)
+USE_WEBHOOK=false  # true para usar webhooks, false para polling
+WEBHOOK_URL=https://tu-proyecto.railway.app  # URL completa de Railway
+WEBHOOK_PORT=8443  # Puerto del webhook
+WEBHOOK_PATH=/webhook  # Ruta del endpoint
+WEBHOOK_SECRET_TOKEN=tu_token_secreto  # Token opcional para seguridad
    ```
 
 ## 🚀 Uso
@@ -171,6 +178,20 @@ Las contribuciones son bienvenidas. Por favor:
 
 ## 🚂 Despliegue en Railway
 
+### ⚡ Modos de Operación
+
+El bot soporta dos modos de operación:
+
+#### 1. **Polling** (Modo por defecto - Fácil setup)
+- El bot consulta periódicamente a Telegram por nuevas actualizaciones
+- Más simple de configurar, pero menos eficiente
+- Ideal para desarrollo y testing
+
+#### 2. **Webhook** (Modo recomendado - Mejor rendimiento)
+- Telegram envía actualizaciones directamente al bot
+- Más eficiente y escalable
+- Requiere configuración adicional pero elimina polling constante
+
 ### Si ya tienes repositorio y volumen creados:
 
 1. **Conectar al proyecto:**
@@ -202,6 +223,35 @@ Las contribuciones son bienvenidas. Por favor:
    railway status
    railway logs --follow
    ```
+
+### Configuración de Webhooks (Opcional)
+
+Para usar webhooks en lugar de polling (más eficiente):
+
+1. **Configurar variables:**
+   ```bash
+   railway variables set USE_WEBHOOK=true
+   railway variables set WEBHOOK_URL=https://tu-proyecto.railway.app
+   railway variables set WEBHOOK_PORT=8443
+   railway variables set WEBHOOK_PATH=/webhook
+   ```
+
+2. **Redeploy:**
+   ```bash
+   railway deploy
+   ```
+
+3. **Configurar Telegram:**
+   Una vez desplegado, configura el webhook en Telegram:
+   ```bash
+   curl "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url=https://tu-proyecto.railway.app/webhook"
+   ```
+
+**Ventajas de Webhooks:**
+- ✅ Respuestas instantáneas (sin polling)
+- ✅ Menos uso de CPU y ancho de banda
+- ✅ Mejor escalabilidad
+- ✅ Más eficiente para alta carga
 
 ### Configuración desde cero:
 

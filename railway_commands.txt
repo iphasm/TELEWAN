@@ -12,18 +12,25 @@ railway variables set WAVESPEED_API_KEY=tu_api_key_aqui
 # 3. Configurar volumen (ya creado)
 railway variables set VOLUME_PATH=/app/storage
 
-# 4. Verificar configuración
+# 4. Configurar webhook (opcional - para mejor rendimiento)
+railway variables set USE_WEBHOOK=true
+railway variables set WEBHOOK_URL=https://tu-proyecto.railway.app
+railway variables set WEBHOOK_PORT=8443
+railway variables set WEBHOOK_PATH=/webhook
+railway variables set WEBHOOK_SECRET_TOKEN=tu_token_secreto_opcional
+
+# 5. Verificar configuración
 railway variables list
 railway volume list
 
-# 5. Desplegar
+# 6. Desplegar
 railway deploy
 
-# 6. Verificar
+# 7. Verificar
 railway status
 railway logs
 
-# 7. Ver logs en tiempo real
+# 8. Ver logs en tiempo real
 railway logs --follow
 
 

@@ -27,6 +27,12 @@ class Config:
     # Almacenamiento (para Railway u otros servicios)
     VOLUME_PATH = os.getenv('VOLUME_PATH', './storage')  # Default: ./storage
 
+    # Webhook configuration
+    USE_WEBHOOK = os.getenv('USE_WEBHOOK', 'false').lower() == 'true'
+    WEBHOOK_URL = os.getenv('WEBHOOK_URL')  # URL completa del webhook
+    WEBHOOK_PORT = int(os.getenv('WEBHOOK_PORT', '8443'))
+    WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
+
     @classmethod
     def validate(cls):
         """Valida que todas las configuraciones requeridas estén presentes"""

@@ -366,16 +366,38 @@ def main() -> None:
         return
 
     # Crear aplicación
-    application = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
+    if Config.USE_WEBHOOK and Config.WEBHOOK_URL:
+        logger.info("Configurando bot para usar WEBHOOKS")
+        application = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
 
-    # Agregar manejadores
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+        # Agregar manejadores
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    # Iniciar el bot
-    logger.info("Bot iniciado. Presiona Ctrl+C para detener.")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+        # Configurar webhook
+        webhook_url = f"{Config.WEBHOOK_URL}{Config.WEBHOOK_PATH}"
+        logger.info(f"Configurando webhook en: {webhook_url}")
+
+        # Iniciar el servidor web para webhooks
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=Config.WEBHOOK_PORT,
+            webhook_url=webhook_url,
+            secret_token=os.getenv('WEBHOOK_SECRET_TOKEN')  # Opcional pero recomendado
+        )
+    else:
+        logger.info("Configurando bot para usar POLLING")
+        application = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
+
+        # Agregar manejadores
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+
+        # Iniciar el bot con polling
+        logger.info("Bot iniciado con polling. Presiona Ctrl+C para detener.")
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
     main()
