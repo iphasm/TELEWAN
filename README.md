@@ -35,6 +35,9 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
    # Token del bot de Telegram (obtenlo de @BotFather)
    TELEGRAM_BOT_TOKEN=tu_token_aqui
 
+   # ID de usuario autorizado (opcional - si no se configura, permite a todos)
+   ALLOWED_USER_ID=tu_user_id_aqui
+
    # API Key de Wavespeed
    WAVESPEED_API_KEY=tu_api_key_aqui
 
@@ -82,14 +85,38 @@ El bot incluye automáticamente una negative prompt avanzada que filtra elemento
 
 Esto asegura videos de mayor calidad sin necesidad de especificar estos filtros manualmente.
 
+## 🔐 Autenticación de Usuarios
+
+### Acceso Restringido (Opcional)
+
+Para hacer el bot privado y que solo tú puedas usarlo:
+
+1. **Obtén tu User ID:**
+   - Envía un mensaje a [@userinfobot](https://t.me/userinfobot) en Telegram
+   - Copia el ID que te da
+
+2. **Configura la variable:**
+   ```bash
+   # Solo permite acceso a tu ID de usuario
+   ALLOWED_USER_ID=123456789
+   ```
+
+3. **Resultado:**
+   - ✅ Solo tú puedes usar el bot
+   - ❌ Otros usuarios ven mensaje de "acceso denegado"
+
+Si no configuras `ALLOWED_USER_ID`, el bot permite acceso a todos los usuarios.
+
 ## ⚙️ Configuración
 
 El bot incluye configuración personalizable en `config.py`:
 
+- `ALLOWED_USER_ID`: ID de usuario autorizado (opcional, permite acceso restringido)
 - `MAX_VIDEO_DURATION`: Duración del video en segundos (default: 8)
 - `ASPECT_RATIO`: Relación de aspecto del video (default: "16:9")
 - `MAX_POLLING_ATTEMPTS`: Máximo número de intentos de polling (default: 160)
 - `POLLING_INTERVAL`: Intervalo entre checks de estado en segundos (default: 0.5)
+- `NEGATIVE_PROMPT`: Filtros automáticos para mejorar calidad (configurado)
 
 ## 🔧 Comandos disponibles
 

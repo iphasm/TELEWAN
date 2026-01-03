@@ -119,6 +119,16 @@ class WavespeedAPI:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejador del comando /start"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(
+            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
+        )
+        logger.warning(f"Acceso denegado para usuario {user_id} en /start")
+        return
+
     welcome_message = """
 ¡Hola! Soy un bot que transforma fotos en videos usando IA.
 
@@ -138,9 +148,18 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """Manejador de fotos enviadas (incluyendo forwards)"""
     try:
         message = update.message
+        user_id = message.from_user.id
+
+        # Verificar autenticación si está configurada
+        if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+            await message.reply_text(
+                "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
+            )
+            logger.warning(f"Acceso denegado para usuario {user_id}")
+            return
 
         # Logging para debug
-        logger.info(f"Foto recibida - Forward: {bool(message.forward_origin)}, Caption: {bool(message.caption)}")
+        logger.info(f"Foto recibida - User: {user_id}, Forward: {bool(message.forward_origin)}, Caption: {bool(message.caption)}")
 
         # Verificar que hay un caption
         # El bot acepta tanto fotos enviadas directamente como forwards con caption
@@ -264,6 +283,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejador del comando /help"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(
+            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
+        )
+        logger.warning(f"Acceso denegado para usuario {user_id} en /help")
+        return
+
     help_text = """
 🤖 **Comandos disponibles:**
 

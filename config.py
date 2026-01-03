@@ -8,6 +8,9 @@ class Config:
     # Telegram Bot Token
     TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
+    # Autenticación - ID de usuario permitido (opcional)
+    ALLOWED_USER_ID = os.getenv('ALLOWED_USER_ID')  # Si no se configura, permite a todos
+
     # Wavespeed API
     WAVESPEED_API_KEY = os.getenv('WAVESPEED_API_KEY')
     WAVESPEED_BASE_URL = os.getenv('WAVESPEED_BASE_URL', 'https://api.wavespeed.ai')

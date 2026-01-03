@@ -1,6 +1,9 @@
 # Token del bot de Telegram (obtenlo de @BotFather en Telegram)
 TELEGRAM_BOT_TOKEN=tu_token_de_telegram_aqui
 
+# ID de usuario autorizado (opcional - si no se configura, permite a todos)
+ALLOWED_USER_ID=tu_user_id_aqui
+
 # API Key de Wavespeed (obténla de https://wavespeed.ai)
 WAVESPEED_API_KEY=tu_api_key_de_wavespeed_aqui
 
