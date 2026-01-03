@@ -224,10 +224,22 @@ El bot soporta dos modos de operación:
    railway logs --follow
    ```
 
-### Configuración de Webhooks (Opcional)
+### Configuración de Webhooks (Recomendado)
 
 Para usar webhooks en lugar de polling (más eficiente):
 
+#### 🚀 **Método Automático (Recomendado):**
+```bash
+# Hacer ejecutable el script
+chmod +x railway_setup_webhook.sh
+
+# Ejecutar configuración automática
+./railway_setup_webhook.sh
+```
+
+El script te guiará paso a paso y configurará todo automáticamente.
+
+#### 🔧 **Método Manual:**
 1. **Configurar variables:**
    ```bash
    railway variables set USE_WEBHOOK=true
@@ -242,16 +254,38 @@ Para usar webhooks en lugar de polling (más eficiente):
    ```
 
 3. **Configurar Telegram:**
-   Una vez desplegado, configura el webhook en Telegram:
    ```bash
-   curl "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url=https://tu-proyecto.railway.app/webhook"
+   # Automático:
+   railway run python setup_webhook.py setup
+
+   # Manual:
+   curl "https://api.telegram.org/bot{TOKEN}/setWebhook?url=https://tu-proyecto.railway.app/webhook"
    ```
 
+#### 🧪 **Testing Local:**
+```bash
+# Configurar entorno local
+python test_webhook_local.py setup
+
+# Probar configuración
+python test_webhook_local.py test
+```
+
+#### 📊 **Verificación:**
+```bash
+# Verificar estado del webhook
+railway run python setup_webhook.py check
+
+# Ver logs
+railway logs --follow
+```
+
 **Ventajas de Webhooks:**
-- ✅ Respuestas instantáneas (sin polling)
+- ✅ Respuestas instantáneas (sin polling cada 10s)
 - ✅ Menos uso de CPU y ancho de banda
 - ✅ Mejor escalabilidad
 - ✅ Más eficiente para alta carga
+- ✅ Mejor experiencia de usuario
 
 ### Configuración desde cero:
 
