@@ -42,3 +42,4 @@ VOLUME_PATH=/app/storage
 ```
 
 ¿Para qué necesitas el volumen exactamente? ¿Logs, cache, o algo más específico?
+

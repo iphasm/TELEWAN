@@ -9,6 +9,7 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
 - 📝 **Prompts personalizados**: Utiliza el caption de la foto como descripción para generar el video
 - ⚡ **Procesamiento ultra rápido**: Optimizado para respuestas rápidas con polling eficiente
 - ⏱️ **Videos de 8 segundos**: Duración extendida para mejores resultados
+- 💾 **Almacenamiento persistente**: Fotos y videos guardados en volumen con nombres únicos
 - 🔒 **Seguro**: Manejo adecuado de archivos y configuración
 
 ## 📋 Requisitos
@@ -160,6 +161,24 @@ Las contribuciones son bienvenidas. Por favor:
    ```
 
 3. **Seguir pasos 2-5 de arriba**
+
+## 💾 Almacenamiento de Archivos
+
+El bot guarda automáticamente todos los archivos en el volumen de Railway con nombres únicos en serie:
+
+- **Fotos de entrada**: `input_YYYYMMDD_HHMMSS_XXXXXXX.jpg`
+- **Videos generados**: `output_YYYYMMDD_HHMMSS_XXXXXXX.mp4`
+
+### Ubicación:
+```
+/app/storage/
+```
+
+### Beneficios:
+- ✅ **Historial persistente** entre despliegues
+- ✅ **Nombres únicos** para evitar conflictos
+- ✅ **Acceso rápido** a archivos procesados
+- ✅ **Backup automático** en Railway
 
 ### Ruta del Volumen en Railway
 

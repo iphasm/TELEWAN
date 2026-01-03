@@ -188,3 +188,4 @@ Si los problemas persisten:
 - [ ] Bot responde en Telegram
 - [ ] Logs sin errores críticos
 - [ ] Generación de videos funciona
+

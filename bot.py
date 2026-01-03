@@ -2,6 +2,9 @@ import logging
 import requests
 import time
 import io
+import os
+import uuid
+from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from PIL import Image
@@ -13,6 +16,48 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+def generate_serial_filename(prefix: str, extension: str) -> str:
+    """
+    Genera un nombre de archivo único con timestamp y UUID
+    Formato: {prefix}_{timestamp}_{uuid}.{extension}
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    unique_id = str(uuid.uuid4())[:8]  # Primeros 8 caracteres del UUID
+    return f"{prefix}_{timestamp}_{unique_id}.{extension}"
+
+def ensure_storage_directory():
+    """
+    Asegura que el directorio de almacenamiento existe
+    """
+    os.makedirs(Config.VOLUME_PATH, exist_ok=True)
+    return Config.VOLUME_PATH
+
+def save_image_to_volume(image_bytes: bytes, filename: str) -> str:
+    """
+    Guarda una imagen en el volumen y retorna la ruta completa
+    """
+    storage_dir = ensure_storage_directory()
+    filepath = os.path.join(storage_dir, filename)
+
+    with open(filepath, 'wb') as f:
+        f.write(image_bytes)
+
+    logger.info(f"Imagen guardada en: {filepath}")
+    return filepath
+
+def save_video_to_volume(video_bytes: bytes, filename: str) -> str:
+    """
+    Guarda un video en el volumen y retorna la ruta completa
+    """
+    storage_dir = ensure_storage_directory()
+    filepath = os.path.join(storage_dir, filename)
+
+    with open(filepath, 'wb') as f:
+        f.write(video_bytes)
+
+    logger.info(f"Video guardado en: {filepath}")
+    return filepath
 
 class WavespeedAPI:
     def __init__(self):
@@ -104,7 +149,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         # Obtener información del archivo de la foto
         photo_file = await context.bot.get_file(photo.file_id)
 
-        # Construir URL correcta para la imagen
+        # Construir URL correcta para la imagen (para WaveSpeed API)
         if photo_file.file_path.startswith('http'):
             # file_path ya es una URL completa
             photo_file_url = photo_file.file_path
@@ -112,8 +157,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             # file_path es relativo, construir URL completa
             photo_file_url = f"https://api.telegram.org/file/bot{Config.TELEGRAM_BOT_TOKEN}/{photo_file.file_path}"
 
-        # Descargar la foto para verificar que existe
+        # Descargar la foto para guardarla localmente
         photo_bytes = await photo_file.download_as_bytearray()
+
+        # Generar nombre único para la imagen y guardarla en el volumen
+        image_filename = generate_serial_filename("input", "jpg")
+        image_filepath = save_image_to_volume(photo_bytes, image_filename)
 
         # Procesar la imagen (opcional, por si necesitamos redimensionar)
         image = Image.open(io.BytesIO(photo_bytes))
@@ -148,16 +197,22 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     status = task_data.get('status')
 
                     if status == 'completed':
-                        if task_data.get('outputs') and len(task_data['outputs']) > 0:
-                            video_url = task_data['outputs'][0]
-                            logger.info(f"Task completed. URL: {video_url}")
+                    if task_data.get('outputs') and len(task_data['outputs']) > 0:
+                        video_url = task_data['outputs'][0]
+                        logger.info(f"Task completed. URL: {video_url}")
 
-                            # Descargar y enviar el video
-                            video_bytes = wavespeed.download_video(video_url)
+                        # Descargar el video
+                        video_bytes = wavespeed.download_video(video_url)
 
+                        # Generar nombre único para el video y guardarlo en el volumen
+                        video_filename = generate_serial_filename("output", "mp4")
+                        video_filepath = save_video_to_volume(video_bytes, video_filename)
+
+                        # Enviar el video desde el archivo guardado
+                        with open(video_filepath, 'rb') as video_file:
                             await context.bot.send_video(
                                 chat_id=update.effective_chat.id,
-                                video=video_bytes,
+                                video=video_file,
                                 caption="¡Aquí está tu video generado! 🎥"
                             )
 

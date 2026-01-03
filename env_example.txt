@@ -6,3 +6,4 @@ WAVESPEED_API_KEY=tu_api_key_de_wavespeed_aqui
 
 # URL base de la API de Wavespeed (opcional, valor por defecto ya configurado)
 WAVESPEED_BASE_URL=https://api.wavespeed.ai
+
