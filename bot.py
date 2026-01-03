@@ -365,25 +365,44 @@ def create_app():
     # Healthcheck endpoint
     @app.route('/', methods=['GET'])
     def healthcheck():
+        logger.info("Healthcheck endpoint called")
         return jsonify({
             "status": "healthy",
             "service": "TELEWAN Bot",
             "timestamp": datetime.now().isoformat()
         }), 200
 
+    # Test endpoint
+    @app.route('/test', methods=['GET'])
+    def test():
+        logger.info("Test endpoint called")
+        return jsonify({"message": "TELEWAN Bot is running"}), 200
+
     return app
 
 def main() -> None:
     """Función principal"""
+    logger.info("Iniciando TELEWAN Bot...")
+
     try:
         Config.validate()
+        logger.info("Configuración validada correctamente")
     except ValueError as e:
         logger.error(f"Error de configuración: {e}")
         return
 
+    # Verificar modo de operación
+    use_webhook = Config.USE_WEBHOOK
+    logger.info(f"USE_WEBHOOK config: {Config.USE_WEBHOOK}")
+    logger.info(f"USE_WEBHOOK evaluated: {use_webhook}")
+    logger.info(f"Modo de operación: {'WEBHOOK' if use_webhook else 'POLLING'}")
+
     # Crear aplicación
-    if Config.USE_WEBHOOK:
+    if use_webhook:
         logger.info("Configurando bot para usar WEBHOOKS con Flask")
+        logger.info(f"WEBHOOK_URL: {Config.WEBHOOK_URL}")
+        logger.info(f"WEBHOOK_PORT: {Config.WEBHOOK_PORT}")
+        logger.info(f"WEBHOOK_PATH: {Config.WEBHOOK_PATH}")
 
         # Crear aplicación Flask
         app = create_app()
@@ -454,8 +473,14 @@ def main() -> None:
                 logger.error(f"Error configurando webhook: {e}")
 
         # Iniciar servidor Flask
-        logger.info(f"🚀 Servidor iniciado en puerto {Config.WEBHOOK_PORT}")
-        app.run(host="0.0.0.0", port=Config.WEBHOOK_PORT, debug=False)
+        logger.info(f"🚀 Iniciando servidor Flask en puerto {Config.WEBHOOK_PORT}")
+        logger.info("Servidor web listo para recibir peticiones")
+
+        try:
+            app.run(host="0.0.0.0", port=Config.WEBHOOK_PORT, debug=False)
+        except Exception as server_error:
+            logger.error(f"Error iniciando servidor Flask: {server_error}")
+            raise
 
     else:
         logger.info("Configurando bot para usar POLLING")
