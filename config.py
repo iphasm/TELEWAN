@@ -15,8 +15,8 @@ class Config:
     # Configuración del bot
     MAX_VIDEO_DURATION = 5  # segundos
     ASPECT_RATIO = "16:9"
-    MAX_POLLING_ATTEMPTS = 30  # máximo 5 minutos de espera
-    POLLING_INTERVAL = 10  # segundos entre checks
+    MAX_POLLING_ATTEMPTS = 120  # máximo ~1 minuto de espera (120 * 0.5s)
+    POLLING_INTERVAL = 0.5  # segundos entre checks (como en el ejemplo)
 
     @classmethod
     def validate(cls):

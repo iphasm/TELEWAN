@@ -25,19 +25,17 @@ class WavespeedAPI:
 
     def generate_video(self, prompt: str, image_url: str = None) -> dict:
         """
-        Genera un video usando el modelo wan 2.2 480p fast
+        Genera un video usando el modelo wan 2.2 i2v 480p ultra fast
         """
-        endpoint = f"{self.base_url}/v1/video/generate"
+        endpoint = f"{self.base_url}/api/v3/wavespeed-ai/wan-2.2/i2v-480p-ultra-fast"
 
         payload = {
-            "model": "wan-2.2-480p-fast",
-            "prompt": prompt,
             "duration": Config.MAX_VIDEO_DURATION,
-            "aspect_ratio": Config.ASPECT_RATIO
+            "image": image_url,  # URL de la imagen enviada por Telegram
+            "last_image": "",
+            "prompt": prompt,
+            "seed": -1
         }
-
-        if image_url:
-            payload["image_url"] = image_url
 
         try:
             response = requests.post(endpoint, json=payload, headers=self.headers)
@@ -47,11 +45,11 @@ class WavespeedAPI:
             logger.error(f"Error en la API de Wavespeed: {e}")
             raise
 
-    def get_video_status(self, task_id: str) -> dict:
+    def get_video_status(self, request_id: str) -> dict:
         """
         Obtiene el estado de una tarea de generación de video
         """
-        endpoint = f"{self.base_url}/v1/video/status/{task_id}"
+        endpoint = f"{self.base_url}/api/v3/predictions/{request_id}/result"
 
         try:
             response = requests.get(endpoint, headers=self.headers)
@@ -103,8 +101,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         # Obtener la foto de mejor calidad
         photo = update.message.photo[-1]  # La última es la de mejor calidad
 
-        # Descargar la foto
+        # Obtener información del archivo de la foto
         photo_file = await context.bot.get_file(photo.file_id)
+        photo_file_url = f"https://api.telegram.org/file/bot{Config.TELEGRAM_BOT_TOKEN}/{photo_file.file_path}"
+
+        # Descargar la foto para verificar que existe
         photo_bytes = await photo_file.download_as_bytearray()
 
         # Procesar la imagen (opcional, por si necesitamos redimensionar)
@@ -116,48 +117,58 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
 
         # Inicializar API de Wavespeed
-        wavespeed = WavespeedAPI(WAVESPEED_API_KEY)
+        wavespeed = WavespeedAPI()
 
         # Generar video
         prompt = update.message.caption
         logger.info(f"Generando video con prompt: {prompt}")
 
         # Llamar a la API
-        result = wavespeed.generate_video(prompt)
+        result = wavespeed.generate_video(prompt, photo_file_url)
 
-        if 'task_id' in result:
-            task_id = result['task_id']
+        if result.get('data') and result['data'].get('id'):
+            request_id = result['data']['id']
+            logger.info(f"Task submitted successfully. Request ID: {request_id}")
 
             # Esperar a que se complete
             attempt = 0
 
             while attempt < Config.MAX_POLLING_ATTEMPTS:
-                status_result = wavespeed.get_video_status(task_id)
+                status_result = wavespeed.get_video_status(request_id)
 
-                if status_result.get('status') == 'completed':
-                    video_url = status_result.get('video_url')
-                    if video_url:
-                        # Descargar y enviar el video
-                        video_bytes = wavespeed.download_video(video_url)
+                if status_result.get('data'):
+                    task_data = status_result['data']
+                    status = task_data.get('status')
 
-                        await context.bot.send_video(
-                            chat_id=update.effective_chat.id,
-                            video=video_bytes,
-                            caption="¡Aquí está tu video generado! 🎥"
+                    if status == 'completed':
+                        if task_data.get('outputs') and len(task_data['outputs']) > 0:
+                            video_url = task_data['outputs'][0]
+                            logger.info(f"Task completed. URL: {video_url}")
+
+                            # Descargar y enviar el video
+                            video_bytes = wavespeed.download_video(video_url)
+
+                            await context.bot.send_video(
+                                chat_id=update.effective_chat.id,
+                                video=video_bytes,
+                                caption="¡Aquí está tu video generado! 🎥"
+                            )
+
+                            # Eliminar mensaje de procesamiento
+                            await processing_msg.delete()
+                            return
+
+                    elif status == 'failed':
+                        error_msg = task_data.get('error', 'Error desconocido')
+                        await processing_msg.edit_text(
+                            f"❌ Lo siento, hubo un error al generar el video: {error_msg}"
                         )
-
-                        # Eliminar mensaje de procesamiento
-                        await processing_msg.delete()
                         return
+                    else:
+                        logger.info(f"Task still processing. Status: {status}")
 
-                elif status_result.get('status') == 'failed':
-                    await processing_msg.edit_text(
-                        "❌ Lo siento, hubo un error al generar el video. Inténtalo de nuevo."
-                    )
-                    return
-
-                # Esperar antes del siguiente check
-                time.sleep(Config.POLLING_INTERVAL)
+                # Esperar antes del siguiente check (0.5 segundos como en el ejemplo)
+                time.sleep(0.5)
                 attempt += 1
 
             # Si llega aquí, timeout
