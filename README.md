@@ -11,6 +11,7 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
 - ⏱️ **Videos de 8 segundos**: Duración extendida para mejores resultados
 - 💾 **Almacenamiento persistente**: Fotos y videos guardados en volumen con nombres únicos
 - 🔄 **Soporte para forwards**: Procesa fotos forwardeadas que tengan captions descriptivos
+- 🚫 **Negative prompt automática**: Filtros integrados para evitar elementos no deseados
 - 🔒 **Seguro**: Manejo adecuado de archivos y configuración
 
 ## 📋 Requisitos
@@ -70,6 +71,16 @@ El bot también procesa fotos que forwardees de otros chats o canales, siempre y
 - "Una ciudad futurista con coches voladores y neones brillantes"
 - "Un bosque mágico con hadas danzando entre los árboles"
 - "Olas del océano rompiendo en la playa al atardecer"
+
+### 🚫 Negative Prompt Automática
+
+El bot incluye automáticamente una negative prompt avanzada que filtra elementos no deseados como:
+- Artefactos de calidad baja, distorsiones, deformaciones
+- Texto, watermarks, logos, censuras
+- Ropa, accesorios, elementos 3D/cartoon
+- Movimientos estáticos, transiciones pobres, flickering
+
+Esto asegura videos de mayor calidad sin necesidad de especificar estos filtros manualmente.
 
 ## ⚙️ Configuración
 

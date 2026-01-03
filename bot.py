@@ -79,6 +79,7 @@ class WavespeedAPI:
             "image": image_url,  # URL de la imagen enviada por Telegram
             "last_image": "",
             "prompt": prompt,
+            "negative_prompt": Config.NEGATIVE_PROMPT,
             "seed": -1
         }
 

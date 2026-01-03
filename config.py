@@ -18,6 +18,9 @@ class Config:
     MAX_POLLING_ATTEMPTS = 160  # máximo ~1 minuto 20 segundos de espera (160 * 0.5s)
     POLLING_INTERVAL = 0.5  # segundos entre checks (como en el ejemplo)
 
+    # Negative prompt automática para todas las solicitudes
+    NEGATIVE_PROMPT = "low quality, worst quality, blurry, artifacts, distortion, deformed, disfigured, ugly, extra limbs, mutated hands, malformed, poor anatomy, distorted face, distorted features, melting face, face morphing, changing face, changing identity, different person, text, watermark, logo, censored, mosaic, black bars, static camera, looped motion, bad transitions, fade transitions, jitter, flicker, clothing, underwear, bra, panties, shirt, pants, accessories, watch, smartwatch, cartoon, 3d render, doll, plastic skin, overexposed, underexposed, cluttered background"
+
     # Almacenamiento (para Railway u otros servicios)
     VOLUME_PATH = os.getenv('VOLUME_PATH', './storage')  # Default: ./storage
 
