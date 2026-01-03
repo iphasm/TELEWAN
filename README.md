@@ -113,6 +113,42 @@ Las contribuciones son bienvenidas. Por favor:
 4. Push a la rama (`git push origin feature/AmazingFeature`)
 5. Abre un Pull Request
 
+## 🚂 Despliegue en Railway
+
+### Configuración Básica
+
+1. **Conectar repositorio:**
+   ```bash
+   railway login
+   railway link
+   ```
+
+2. **Variables de entorno:**
+   ```bash
+   railway variables set TELEGRAM_BOT_TOKEN=tu_token_aqui
+   railway variables set WAVESPEED_API_KEY=tu_api_key_aqui
+   ```
+
+3. **Crear volumen (opcional, para almacenamiento persistente):**
+   ```bash
+   railway volume create telewan-storage
+   railway variables set VOLUME_PATH=/app/storage
+   ```
+
+4. **Desplegar:**
+   ```bash
+   railway deploy
+   ```
+
+### Ruta del Volumen en Railway
+
+Los volúmenes en Railway se montan automáticamente en:
+```
+/app/storage
+```
+
+Esta es la **dirección del volumen** que usarías para almacenamiento persistente.
+
 ## 📄 Licencia
 
 Este proyecto está bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) para más detalles.
@@ -121,6 +157,7 @@ Este proyecto está bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) par
 
 - [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) - Librería para bots de Telegram
 - [Wavespeed AI](https://wavespeed.ai) - API de generación de videos con IA
+- [Railway](https://railway.app) - Plataforma de despliegue
 
 ---
 

@@ -18,6 +18,9 @@ class Config:
     MAX_POLLING_ATTEMPTS = 120  # máximo ~1 minuto de espera (120 * 0.5s)
     POLLING_INTERVAL = 0.5  # segundos entre checks (como en el ejemplo)
 
+    # Almacenamiento (para Railway u otros servicios)
+    VOLUME_PATH = os.getenv('VOLUME_PATH', './storage')  # Default: ./storage
+
     @classmethod
     def validate(cls):
         """Valida que todas las configuraciones requeridas estén presentes"""
