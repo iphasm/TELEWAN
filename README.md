@@ -2,7 +2,7 @@
 
 Un bot de Telegram que transforma fotografías en videos usando IA, específicamente el modelo **Wan 2.2 I2V 480p Ultra Fast** de Wavespeed.
 
-## 🚀 Características
+### 🚀 Características
 
 - 📸 **Transformación de fotos a videos**: Convierte imágenes estáticas en videos animados
 - 🎬 **IA avanzada**: Usa el modelo Wan 2.2 I2V 480p Ultra Fast de Wavespeed
