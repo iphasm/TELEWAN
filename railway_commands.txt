@@ -1,0 +1,27 @@
+# 🚀 Comandos para desplegar en Railway
+# Ejecutar en orden después de crear repositorio y volumen
+
+# 1. Login y conectar al proyecto
+railway login
+railway link
+
+# 2. Configurar variables de entorno
+railway variables set TELEGRAM_BOT_TOKEN=tu_token_aqui
+railway variables set WAVESPEED_API_KEY=tu_api_key_aqui
+
+# 3. Configurar volumen (ya creado)
+railway variables set VOLUME_PATH=/app/storage
+
+# 4. Verificar configuración
+railway variables list
+railway volume list
+
+# 5. Desplegar
+railway deploy
+
+# 6. Verificar
+railway status
+railway logs
+
+# 7. Ver logs en tiempo real
+railway logs --follow

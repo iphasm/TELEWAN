@@ -1,0 +1,14 @@
+{
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "python bot.py"
+  },
+  "volumes": [
+    {
+      "name": "telewan-storage",
+      "path": "/app/storage"
+    }
+  ]
+}

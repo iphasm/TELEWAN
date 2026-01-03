@@ -115,30 +115,50 @@ Las contribuciones son bienvenidas. Por favor:
 
 ## 🚂 Despliegue en Railway
 
-### Configuración Básica
+### Si ya tienes repositorio y volumen creados:
 
-1. **Conectar repositorio:**
+1. **Conectar al proyecto:**
    ```bash
    railway login
    railway link
    ```
 
-2. **Variables de entorno:**
+2. **Configurar variables de entorno:**
    ```bash
    railway variables set TELEGRAM_BOT_TOKEN=tu_token_aqui
    railway variables set WAVESPEED_API_KEY=tu_api_key_aqui
+   railway variables set VOLUME_PATH=/app/storage
    ```
 
-3. **Crear volumen (opcional, para almacenamiento persistente):**
+3. **Verificar configuración:**
    ```bash
-   railway volume create telewan-storage
-   railway variables set VOLUME_PATH=/app/storage
+   railway variables list
+   railway volume list
    ```
 
 4. **Desplegar:**
    ```bash
    railway deploy
    ```
+
+5. **Verificar:**
+   ```bash
+   railway status
+   railway logs --follow
+   ```
+
+### Configuración desde cero:
+
+1. **Crear proyecto y conectar GitHub:**
+   - Ve a Railway.app → "New Project"
+   - Conecta tu repositorio GitHub
+
+2. **Crear volumen:**
+   ```bash
+   railway volume create telewan-storage
+   ```
+
+3. **Seguir pasos 2-5 de arriba**
 
 ### Ruta del Volumen en Railway
 
