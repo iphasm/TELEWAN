@@ -35,6 +35,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Prompt por defecto cuando no se proporciona caption
+DEFAULT_PROMPT = (
+    "Absolutely fixed face and head position, zero head movement. No camera movement — a static, hyper-detailed cinematic shot. "
+    "She swiftly reaches and removes her entire dress with decisive and strong motion, revealing bare natural breasts with visible nipples, "
+    "fully naked body without underwear beneath exposing genitals. Skin texture rendered with extreme realism — soft, lifelike, "
+    "with natural pores and subtle sheen under soft, diffused lighting. Moody, atmospheric tone with low-key shadows and ambient glow, "
+    "evoking intimacy and tension. Shot in 4K resolution with shallow depth of field, blurring the background to isolate the subject. "
+    "Cinematic composition, film grain subtly present, emphasizing emotional gravity and visual precision."
+)
+
 def generate_serial_filename(prefix: str, extension: str) -> str:
     """
     Genera un nombre de archivo único con timestamp y UUID
@@ -231,14 +241,19 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         logger.info(f"Imagen recibida - User: {user_id}, Tipo: {media_type}, Forward: {bool(message.forward_origin)}, Caption: {bool(message.caption)}")
 
-        # Verificar que hay un caption
-        # El bot acepta tanto fotos enviadas directamente como forwards con caption
-        if not message.caption:
+        # Usar caption si existe, sino usar prompt por defecto
+        if message.caption:
+            prompt = message.caption
+            logger.info(f"Usando caption personalizado: '{prompt[:50]}...'")
+        else:
+            prompt = DEFAULT_PROMPT
+            # Informar al usuario que se está usando el prompt por defecto
             await message.reply_text(
-                "❌ Por favor, incluye una descripción (caption) con tu foto para generar el video.\n\n"
-                "💡 **Tip:** Si estás forwardeando una foto, asegúrate de que el mensaje original tenga un caption descriptivo."
+                "🎬 **Procesando con prompt automático**\n\n"
+                "No proporcionaste un caption, así que usaré un prompt cinematográfico predefinido.\n\n"
+                "💡 **Tip:** Para personalizar el video, agrega un caption descriptivo a tu imagen."
             )
-            return
+            logger.info("Usando prompt por defecto (sin caption proporcionado)")
 
         # Múltiples métodos de verificación de imagen
         is_image, image_type, error_msg = is_image_message(message)
@@ -295,8 +310,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         wavespeed = WavespeedAPI()
 
         # Generar video
-        prompt = update.message.caption
-        logger.info(f"Generando video con prompt: {prompt}")
+        logger.info(f"Generando video con prompt: {prompt[:100]}...")
 
         # Llamar a la API
         result = wavespeed.generate_video(prompt, photo_file_url)

@@ -78,9 +78,13 @@ El bot reconoce **múltiples formatos de imagen** usando verificación avanzada:
 ### 📝 **Pasos para usar:**
 
 1. **Prepara tu imagen** en cualquiera de los formatos soportados
-2. **Agrega un caption descriptivo** (esto será el prompt para generar el video)
+2. **Opcional: Agrega un caption descriptivo** (será el prompt para generar el video)
 3. **Envía la imagen al bot**
 4. **Espera** a que se procese (puede tomar 1-5 minutos)
+
+### 🎬 **Prompt Automático:**
+
+Si no proporcionas un caption, el bot usará automáticamente un **prompt cinematográfico predefinido** especializado en escenas íntimas y atmosféricas con movimiento dinámico y composición visual detallada.
 
 ### 🔄 **Soporte para Forwards:**
 
@@ -88,12 +92,17 @@ El bot también procesa fotos que forwardees de otros chats o canales, siempre y
 
 **Nota**: Para forwards de fotos sin imagen adjunta, reenvía la imagen original con el caption incluido.
 
-### 💡 Ejemplos de captions efectivos:
+### 💡 **Captions Opcionales:**
 
+**Opcional:** Puedes agregar un caption personalizado para controlar exactamente qué video se genera. Si no agregas caption, el bot usará un prompt automático cinematográfico.
+
+**Ejemplos de captions efectivos:**
 - "Un amanecer sobre las montañas con nubes moviéndose suavemente"
 - "Una ciudad futurista con coches voladores y neones brillantes"
 - "Un bosque mágico con hadas danzando entre los árboles"
 - "Olas del océano rompiendo en la playa al atardecer"
+
+**Sin caption:** Se usa automáticamente el prompt cinematográfico predefinido con escena íntima y composición visual detallada.
 
 ### 🔍 **Verificación Múltiple de Imágenes**
 
