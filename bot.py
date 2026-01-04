@@ -335,17 +335,87 @@ class WavespeedAPI:
             logger.error(f"Error obteniendo estado del video: {e}")
             raise
 
-    def download_video(self, video_url: str) -> bytes:
+    def download_video(self, video_url: str, timeout: int = 30) -> bytes:
         """
-        Descarga el video generado
+        Descarga el video generado con mejor manejo de errores
         """
         try:
-            response = requests.get(video_url)
+            logger.info(f"📥 Iniciando descarga de video desde: {video_url[:50]}...")
+            logger.info(f"   Timeout configurado: {timeout} segundos")
+
+            # Hacer la petición con timeout y headers
+            headers = {
+                'User-Agent': 'TELEWAN-Bot/1.0',
+                'Accept': 'video/mp4,video/*,*/*'
+            }
+
+            response = requests.get(
+                video_url,
+                timeout=timeout,
+                headers=headers,
+                stream=True  # Para mejor manejo de archivos grandes
+            )
+
             response.raise_for_status()
-            return response.content
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error descargando video: {e}")
+
+            # Verificar el tipo de contenido
+            content_type = response.headers.get('content-type', '')
+            logger.info(f"   Content-Type: {content_type}")
+            logger.info(f"   Content-Length: {response.headers.get('content-length', 'unknown')}")
+
+            # Verificar que sea un video
+            if not content_type.startswith('video/'):
+                logger.warning(f"⚠️  Content-Type inesperado: {content_type}")
+
+            # Descargar el contenido
+            content = response.content
+            logger.info(f"✅ Video descargado exitosamente: {len(content)} bytes")
+
+            return content
+
+        except requests.exceptions.Timeout as e:
+            logger.error(f"⏰ Timeout descargando video ({timeout}s): {e}")
             raise
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"🌐 Error de conexión descargando video: {e}")
+            raise
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"🔴 Error HTTP descargando video: {e}")
+            logger.error(f"   Status Code: {response.status_code if 'response' in locals() else 'unknown'}")
+            logger.error(f"   Response: {response.text[:200] if 'response' in locals() else 'no response'}")
+            raise
+        except requests.exceptions.RequestException as e:
+            logger.error(f"📡 Error general descargando video: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"💥 Error inesperado descargando video: {e}")
+            raise
+
+    def _format_download_error(self, error: Exception, video_url: str) -> str:
+        """
+        Formatea un mensaje de error detallado para problemas de descarga
+        """
+        error_type = type(error).__name__
+
+        base_message = "❌ Error al descargar el video después de múltiples intentos.\n\n"
+
+        if isinstance(error, requests.exceptions.Timeout):
+            base_message += "⏰ **Error de timeout**\n"
+            base_message += "El servidor tardó demasiado en responder.\n\n"
+        elif isinstance(error, requests.exceptions.ConnectionError):
+            base_message += "🌐 **Error de conexión**\n"
+            base_message += "No se pudo conectar al servidor de videos.\n\n"
+        elif isinstance(error, requests.exceptions.HTTPError):
+            base_message += "🔴 **Error del servidor**\n"
+            base_message += f"El servidor respondió con error HTTP.\n\n"
+        else:
+            base_message += "📡 **Error desconocido**\n"
+            base_message += f"Tipo: `{error_type}`\n\n"
+
+        base_message += f"🔗 **URL del video:**\n{video_url}\n\n"
+        base_message += "💡 Contacta al administrador si el problema persiste."
+
+        return base_message
 
     def generate_text_to_video(self, prompt: str, model: str = 'text_to_video') -> dict:
         """
@@ -768,6 +838,13 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                     logger.info(f"Video URL obtained: {video_url}")
 
                                     try:
+                                        # Validar URL antes de descargar
+                                        if not video_url or not video_url.startswith('http'):
+                                            logger.error(f"❌ URL de video inválida: {video_url}")
+                                            raise ValueError(f"URL de video inválida: {video_url}")
+
+                                        logger.info(f"🎬 Iniciando descarga de video (intento {output_check + 1}/5)")
+
                                         # Descargar el video con validación
                                         video_bytes = wavespeed.download_video(video_url)
 
@@ -806,15 +883,17 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                             logger.warning(f"Downloaded video too small: {len(video_bytes)} bytes")
 
                                     except Exception as download_error:
-                                        logger.error(f"Error downloading/sending video (attempt {output_check + 1}): {download_error}")
+                                        logger.error(f"❌ Error descargando video (intento {output_check + 1}/5): {download_error}")
+                                        logger.error(f"   Tipo de error: {type(download_error).__name__}")
+                                        logger.error(f"   URL: {video_url}")
+
                                         if output_check < 4:  # No es el último intento
-                                            time.sleep(2)  # Esperar antes de reintentar
+                                            wait_time = 2 * (output_check + 1)  # Espera progresiva: 2s, 4s, 6s, 8s
+                                            logger.info(f"⏳ Reintentando en {wait_time} segundos...")
+                                            time.sleep(wait_time)
                                         else:  # Último intento fallido
-                                            await processing_msg.edit_text(
-                                                f"❌ Error al descargar el video después de múltiples intentos.\n\n"
-                                                f"🔗 URL del video: {video_url}\n"
-                                                f"💡 Contacta al administrador si el problema persiste."
-                                            )
+                                            error_details = self._format_download_error(download_error, video_url)
+                                            await processing_msg.edit_text(error_details)
                                             context.user_data[processing_key] = False
                                             logger.info(f"🧹 Flag limpiado por error en descarga: chat {chat_id}")
                                             return
@@ -1127,42 +1206,64 @@ async def process_video_generation(update: Update, context: ContextTypes.DEFAULT
                             video_url = task_data['outputs'][0]
                             logger.info(f"Video URL obtained: {video_url}")
 
-                            try:
-                                # Descargar el video con validación
-                                video_bytes = wavespeed.download_video(video_url)
+                            # Sistema de reintentos para descarga de video
+                            for download_attempt in range(5):  # Intentar hasta 5 veces
+                                try:
+                                    # Validar URL antes de descargar
+                                    if not video_url or not video_url.startswith('http'):
+                                        logger.error(f"❌ URL de video inválida: {video_url}")
+                                        raise ValueError(f"URL de video inválida: {video_url}")
 
-                                if len(video_bytes) > 1000:  # Verificar que tenga contenido significativo
-                                    # Generar nombre único para el video y guardarlo en el volumen
-                                    video_filename = generate_serial_filename("output", "mp4")
-                                    video_filepath = save_video_to_volume(video_bytes, video_filename)
-                                    logger.info(f"Video saved to: {video_filepath}")
+                                    logger.info(f"🎬 Iniciando descarga de video (intento {download_attempt + 1}/5)")
 
-                                    # Preparar el caption del video con el prompt utilizado
-                                    video_caption = f"🎬 **Prompt utilizado:**\n{prompt}"
+                                    # Descargar el video con validación
+                                    video_bytes = wavespeed.download_video(video_url)
 
-                                    # Enviar el video desde el archivo guardado
-                                    with open(video_filepath, 'rb') as video_file:
-                                        sent_message = await context.bot.send_video(
-                                            chat_id=update.effective_chat.id,
-                                            video=video_file,
-                                            caption=video_caption,
-                                            supports_streaming=True,
-                                            parse_mode='Markdown'
-                                        )
+                                    if len(video_bytes) > 1000:  # Verificar que tenga contenido significativo
+                                        # Generar nombre único para el video y guardarlo en el volumen
+                                        video_filename = generate_serial_filename("output", "mp4")
+                                        video_filepath = save_video_to_volume(video_bytes, video_filename)
+                                        logger.info(f"Video saved to: {video_filepath}")
 
-                                    # Confirmar envío exitoso
-                                    success_msg = "✅ ¡Video enviado exitosamente!"
-                                    if prompt_optimized:
-                                        success_msg += "\n\n🎨 Video con prompt optimizado"
-                                    await processing_msg.edit_text(success_msg)
-                                    logger.info(f"Video sent successfully to user {update.effective_chat.id}")
-                                    video_sent = True
-                                    return
-                                else:
-                                    logger.warning(f"Downloaded video too small: {len(video_bytes)} bytes")
+                                        # Preparar el caption del video con el prompt utilizado
+                                        video_caption = f"🎬 **Prompt utilizado:**\n{prompt}"
 
-                            except Exception as download_error:
-                                logger.error(f"Error downloading video: {download_error}")
+                                        # Enviar el video desde el archivo guardado
+                                        with open(video_filepath, 'rb') as video_file:
+                                            sent_message = await context.bot.send_video(
+                                                chat_id=update.effective_chat.id,
+                                                video=video_file,
+                                                caption=video_caption,
+                                                supports_streaming=True,
+                                                parse_mode='Markdown'
+                                            )
+
+                                        # Confirmar envío exitoso
+                                        success_msg = "✅ ¡Video enviado exitosamente!"
+                                        if prompt_optimized:
+                                            success_msg += "\n\n🎨 Video con prompt optimizado"
+                                        await processing_msg.edit_text(success_msg)
+                                        logger.info(f"Video sent successfully to user {update.effective_chat.id}")
+                                        video_sent = True
+                                        return
+
+                                    else:
+                                        logger.warning(f"Downloaded video too small: {len(video_bytes)} bytes")
+                                        break  # Salir del loop de reintentos
+
+                                except Exception as download_error:
+                                    logger.error(f"❌ Error descargando video (intento {download_attempt + 1}/5): {download_error}")
+                                    logger.error(f"   Tipo de error: {type(download_error).__name__}")
+                                    logger.error(f"   URL: {video_url}")
+
+                                    if download_attempt < 4:  # No es el último intento
+                                        wait_time = 2 * (download_attempt + 1)  # Espera progresiva: 2s, 4s, 6s, 8s
+                                        logger.info(f"⏳ Reintentando descarga en {wait_time} segundos...")
+                                        time.sleep(wait_time)
+                                    else:  # Último intento fallido
+                                        error_details = wavespeed._format_download_error(download_error, video_url)
+                                        await processing_msg.edit_text(error_details)
+                                        return
 
                         else:
                             logger.info(f"Outputs not ready yet (attempt {output_check + 1}/5)")
