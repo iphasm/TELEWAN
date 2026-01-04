@@ -25,3 +25,4 @@ if __name__ == "__main__":
     port = int(os.getenv('WEBHOOK_PORT', '8443'))
     print(f"Testing Flask on port {port}")
     app.run(host="0.0.0.0", port=port, debug=True)
+

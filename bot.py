@@ -8,6 +8,23 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Message
+
+# Filtros personalizados para imágenes
+def image_document_filter(message: Message) -> bool:
+    """Filtro para documentos que son imágenes"""
+    if message.document:
+        mime_type = message.document.mime_type
+        if mime_type and mime_type.startswith('image/'):
+            supported_formats = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
+            return mime_type.lower() in supported_formats
+    return False
+
+def static_sticker_filter(message: Message) -> bool:
+    """Filtro para stickers estáticos (no animados)"""
+    if message.sticker:
+        return not message.sticker.is_animated
+    return False
 from PIL import Image
 from config import Config
 
@@ -145,8 +162,52 @@ Envía una foto de un paisaje con el caption: "Un amanecer sobre las montañas c
     """
     await update.message.reply_text(welcome_message, parse_mode='Markdown')
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Manejador de fotos enviadas (incluyendo forwards)"""
+def is_image_message(message) -> tuple[bool, str, str]:
+    """
+    Verifica si un mensaje contiene una imagen usando múltiples métodos de detección
+    Esta función es usada por handle_image_message para validar antes del procesamiento
+
+    Returns:
+        tuple: (is_image, image_type, error_message)
+    """
+    # Método 1: Foto directa (photo array)
+    if message.photo and len(message.photo) > 0:
+        return True, "photo", ""
+
+    # Método 2: Documento que es imagen (por MIME type)
+    if message.document:
+        mime_type = message.document.mime_type
+        if mime_type and mime_type.startswith('image/'):
+            # Tipos de imagen soportados
+            supported_formats = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
+            if mime_type.lower() in supported_formats:
+                return True, "document", ""
+            else:
+                return False, "", f"❌ Formato de imagen no soportado: {mime_type}.\n\n💡 **Formatos aceptados:** JPG, PNG, WebP, GIF"
+
+    # Método 3: Sticker estático (no animado)
+    if message.sticker and not message.sticker.is_animated:
+        return True, "sticker", ""
+
+    # Método 4: Verificar si es un forward de un mensaje con foto
+    if message.forward_origin and hasattr(message.forward_origin, 'photo') and message.forward_origin.photo:
+        # Es un forward de una foto, pero no tenemos acceso directo a la foto
+        return False, "", "❌ Para forwards de fotos, reenvía la imagen con el caption incluido."
+
+    # Si no se detectó ninguna imagen
+    return False, "", (
+        "❌ No se detectó ninguna imagen en tu mensaje.\n\n"
+        "📸 **Formatos aceptados:**\n"
+        "• Fotos (directamente desde la cámara/galería)\n"
+        "• Documentos de imagen (JPG, PNG, WebP, GIF)\n"
+        "• Stickers estáticos\n\n"
+        "💡 Asegúrate de incluir un **caption descriptivo** con tu imagen."
+    )
+
+async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYPE, image_type: str = "photo") -> None:
+    """
+    Manejador genérico para mensajes con imágenes (fotos, documentos, stickers)
+    """
     try:
         message = update.message
         user_id = message.from_user.id
@@ -160,7 +221,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
 
         # Logging para debug
-        logger.info(f"Foto recibida - User: {user_id}, Forward: {bool(message.forward_origin)}, Caption: {bool(message.caption)}")
+        media_type = "unknown"
+        if message.photo:
+            media_type = "photo"
+        elif message.document:
+            media_type = f"document ({message.document.mime_type})"
+        elif message.sticker:
+            media_type = f"sticker (animated: {message.sticker.is_animated})"
+
+        logger.info(f"Imagen recibida - User: {user_id}, Tipo: {media_type}, Forward: {bool(message.forward_origin)}, Caption: {bool(message.caption)}")
 
         # Verificar que hay un caption
         # El bot acepta tanto fotos enviadas directamente como forwards con caption
@@ -171,15 +240,33 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             )
             return
 
+        # Múltiples métodos de verificación de imagen
+        is_image, image_type, error_msg = is_image_message(message)
+
+        if not is_image:
+            await message.reply_text(error_msg)
+            return
+
+        logger.info(f"Imagen detectada - Tipo: {image_type}, User: {user_id}")
+
         # Información adicional para forwards
         if message.forward_origin:
-            logger.info(f"Procesando foto forwardeada con caption: '{message.caption[:50]}...'")
+            logger.info(f"Procesando imagen forwardeada con caption: '{message.caption[:50]}...'")
 
-        # Obtener la foto de mejor calidad
-        photo = update.message.photo[-1]  # La última es la de mejor calidad
-
-        # Obtener información del archivo de la foto
-        photo_file = await context.bot.get_file(photo.file_id)
+        # Obtener la imagen según el tipo detectado
+        if image_type == "photo":
+            # Foto directa - obtener la mejor calidad
+            photo = message.photo[-1]  # La última es la de mejor calidad
+            photo_file = await context.bot.get_file(photo.file_id)
+        elif image_type == "document":
+            # Documento de imagen
+            photo_file = await context.bot.get_file(message.document.file_id)
+        elif image_type == "sticker":
+            # Sticker estático
+            photo_file = await context.bot.get_file(message.sticker.file_id)
+        else:
+            await message.reply_text("❌ Tipo de imagen no soportado.")
+            return
 
         # Construir URL correcta para la imagen (para WaveSpeed API)
         if photo_file.file_path.startswith('http'):
@@ -326,6 +413,19 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "❌ Ocurrió un error inesperado. Por favor, inténtalo de nuevo."
         )
 
+# Funciones wrapper para diferentes tipos de mensajes con imagen
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador específico para fotos"""
+    await handle_image_message(update, context, "photo")
+
+async def handle_document_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador específico para documentos de imagen"""
+    await handle_image_message(update, context, "document")
+
+async def handle_sticker_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador específico para stickers estáticos"""
+    await handle_image_message(update, context, "sticker")
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejador del comando /help"""
     user_id = update.effective_user.id
@@ -414,7 +514,10 @@ def main() -> None:
         # Agregar manejadores
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
+        # Múltiples handlers para diferentes tipos de imágenes
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+        application.add_handler(MessageHandler(image_document_filter, handle_document_image))
+        application.add_handler(MessageHandler(static_sticker_filter, handle_sticker_image))
 
         # Configurar webhook con Flask
         webhook_path = Config.WEBHOOK_PATH
@@ -490,11 +593,53 @@ def main() -> None:
         # Agregar manejadores
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
+        # Múltiples handlers para diferentes tipos de imágenes
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+        application.add_handler(MessageHandler(image_document_filter, handle_document_image))
+        application.add_handler(MessageHandler(static_sticker_filter, handle_sticker_image))
 
         # Iniciar el bot con polling
         logger.info("Bot iniciado con polling. Presiona Ctrl+C para detener.")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
+# Función de prueba para los filtros (útil para debugging)
+def test_image_filters():
+    """Función de prueba para verificar los filtros de imagen"""
+    from telegram import Message, Document, Sticker, PhotoSize
+
+    # Simular mensajes de prueba
+    print("🧪 Probando filtros de imagen...")
+
+    # Foto
+    photo_msg = Message(message_id=1, date=None, chat=None)
+    photo_msg.photo = [PhotoSize(file_id="test", file_unique_id="test", width=100, height=100)]
+    print(f"Foto: {image_document_filter(photo_msg)} (debería ser False), {static_sticker_filter(photo_msg)} (debería ser False)")
+
+    # Documento de imagen
+    doc_msg = Message(message_id=1, date=None, chat=None)
+    doc_msg.document = Document(file_id="test", file_unique_id="test", mime_type="image/jpeg")
+    print(f"Documento JPG: {image_document_filter(doc_msg)} (debería ser True), {static_sticker_filter(doc_msg)} (debería ser False)")
+
+    # Documento no imagen
+    doc_msg2 = Message(message_id=1, date=None, chat=None)
+    doc_msg2.document = Document(file_id="test", file_unique_id="test", mime_type="application/pdf")
+    print(f"Documento PDF: {image_document_filter(doc_msg2)} (debería ser False), {static_sticker_filter(doc_msg2)} (debería ser False)")
+
+    # Sticker estático
+    sticker_msg = Message(message_id=1, date=None, chat=None)
+    sticker_msg.sticker = Sticker(file_id="test", file_unique_id="test", width=100, height=100, is_animated=False)
+    print(f"Sticker estático: {image_document_filter(sticker_msg)} (debería ser False), {static_sticker_filter(sticker_msg)} (debería ser True)")
+
+    # Sticker animado
+    sticker_msg2 = Message(message_id=1, date=None, chat=None)
+    sticker_msg2.sticker = Sticker(file_id="test", file_unique_id="test", width=100, height=100, is_animated=True)
+    print(f"Sticker animado: {image_document_filter(sticker_msg2)} (debería ser False), {static_sticker_filter(sticker_msg2)} (debería ser False)")
+
+    print("✅ Pruebas completadas")
+
 if __name__ == '__main__':
-    main()
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == 'test_filters':
+        test_image_filters()
+    else:
+        main()
