@@ -8,8 +8,14 @@ Write-Host "=" * 35 -ForegroundColor Cyan
 function Setup-Variables {
     Write-Host "🔧 Configurando variables de entorno..." -ForegroundColor Yellow
 
-    # Usar el token proporcionado por el usuario
-    railway variables --set "TELEGRAM_BOT_TOKEN=8279313475:AAGqfBXqX41HLlM5MCDUPmlukQ62-8NSjnw"
+    # Solicitar token al usuario
+    $TELEGRAM_TOKEN = Read-Host "Ingresa tu TELEGRAM_BOT_TOKEN (de @BotFather)" -AsSecureString
+    if (-not $TELEGRAM_TOKEN) {
+        Write-Host "❌ Token requerido" -ForegroundColor Red
+        exit 1
+    }
+    $TELEGRAM_TOKEN_TEXT = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($TELEGRAM_TOKEN))
+    railway variables --set "TELEGRAM_BOT_TOKEN=$TELEGRAM_TOKEN_TEXT"
 
     # Configurar modo webhook
     railway variables --set "USE_WEBHOOK=true"

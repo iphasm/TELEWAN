@@ -10,8 +10,14 @@ echo "================================"
 setup_variables() {
     echo "🔧 Configurando variables de entorno..."
 
-    # Usar el token proporcionado por el usuario
-    railway variables --set "TELEGRAM_BOT_TOKEN=8279313475:AAGqfBXqX41HLlM5MCDUPmlukQ62-8NSjnw"
+    # Solicitar token al usuario
+    echo "Ingresa tu TELEGRAM_BOT_TOKEN (de @BotFather):"
+    read -s TELEGRAM_TOKEN
+    if [ -z "$TELEGRAM_TOKEN" ]; then
+        echo "❌ Token requerido"
+        exit 1
+    fi
+    railway variables --set "TELEGRAM_BOT_TOKEN=$TELEGRAM_TOKEN"
 
     # Configurar modo webhook
     railway variables --set "USE_WEBHOOK=true"
