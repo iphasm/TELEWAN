@@ -129,7 +129,7 @@ El bot incluye **inteligencia artificial avanzada** para mejorar automáticament
 - **Mejor calidad**: Prompts optimizados generan videos de mejor calidad automáticamente
 
 #### 📝 **Cuándo se optimiza:**
-- ✅ Captions muy cortos (< 10 caracteres)
+- ✅ Captions muy cortos (< 20 caracteres)
 - ✅ Palabras genéricas ("foto", "imagen", "test", "hola")
 - ✅ Descripciones simples que necesitan más detalle técnico
 

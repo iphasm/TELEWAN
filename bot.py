@@ -57,7 +57,7 @@ def should_optimize_prompt(caption: str) -> bool:
     """
     Determina si un caption necesita optimización usando IA
     """
-    if not caption or len(caption.strip()) < 10:
+    if not caption or len(caption.strip()) < 20:
         return True
 
     # Palabras clave que indican captions genéricos o cortos
