@@ -8,6 +8,7 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
 - 🎬 **IA avanzada**: Usa múltiples modelos Wan 2.2 de Wavespeed (Ultra Fast, Fast, Quality, Text-to-Video)
 - 🤖 **Optimización automática de prompts**: IA analiza tus captions y los mejora automáticamente para mejores resultados
 - 📝 **Prompts inteligentes**: Utiliza el caption de la foto como descripción, con optimización automática opcional
+- 🚫 **Prevención de duplicados**: Sistema inteligente que evita procesamiento múltiple del mismo mensaje
 - ⚡ **Procesamiento ultra rápido**: Optimizado para respuestas rápidas con polling eficiente y robusto
 - ⏱️ **Videos de 8 segundos**: Duración extendida para mejores resultados
 - 💾 **Almacenamiento persistente**: Fotos y videos guardados en volumen con nombres únicos
