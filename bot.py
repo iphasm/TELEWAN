@@ -53,6 +53,12 @@ DEFAULT_PROMPT = (
     "Cinematic composition, film grain subtly present, emphasizing emotional gravity and visual precision."
 )
 
+# Constantes para el prompt optimizer
+OPTIMIZER_MODES = ['image', 'video']
+OPTIMIZER_STYLES = ['default', 'realistic', 'cinematic']
+DEFAULT_OPTIMIZER_MODE = 'video'
+DEFAULT_OPTIMIZER_STYLE = 'realistic'
+
 def enhance_prompt_for_video(raw_prompt: str, original_caption: str = "") -> str:
     """
     Mejora un prompt optimizado para que sea más adecuado para generación de video
@@ -152,7 +158,13 @@ def optimize_user_prompt(image_url: str, original_caption: str = "") -> str:
         optimizer_text = original_caption
 
         # Enviar imagen al optimizer con texto mejorado
-        result = wavespeed.optimize_prompt(image_url, text=optimizer_text, mode="video", style="realistic")
+        # Usar modo 'video' y estilo 'realistic' para optimización de video
+        result = wavespeed.optimize_prompt(
+            image_url=image_url,
+            text=optimizer_text,
+            mode="video",
+            style="realistic"
+        )
 
         if result.get('data') and result['data'].get('id'):
             request_id = result['data']['id']
@@ -353,10 +365,26 @@ class WavespeedAPI:
         """
         return self.generate_video(prompt, image_url, model=model)
 
-    def optimize_prompt(self, image_url: str, text: str = "", mode: str = "video", style: str = "realistic") -> dict:
+    def optimize_prompt(self, image_url: str, text: str, mode: str, style: str) -> dict:
         """
         Optimiza un prompt basado en una imagen usando Molmo2
+
+        Args:
+            image_url: URL de la imagen a analizar
+            text: Texto del prompt a optimizar
+            mode: Modo de optimización ('image' o 'video')
+            style: Estilo de optimización ('default', 'realistic', 'cinematic')
         """
+        # Validar parámetros requeridos
+        if not image_url:
+            raise ValueError("image_url es requerido")
+        if not text:
+            raise ValueError("text es requerido")
+        if mode not in OPTIMIZER_MODES:
+            raise ValueError(f"mode debe ser uno de {OPTIMIZER_MODES}, recibido: {mode}")
+        if style not in OPTIMIZER_STYLES:
+            raise ValueError(f"style debe ser uno de {OPTIMIZER_STYLES}, recibido: {style}")
+
         endpoint = f"{self.base_url}/api/v3/wavespeed-ai/molmo2/prompt-optimizer"
 
         payload = {
@@ -366,7 +394,7 @@ class WavespeedAPI:
             "mode": mode,
             "style": style
         }
-        
+
         logger.info(f"Calling prompt optimizer with: image={image_url[:50]}..., text='{text}', mode={mode}, style={style}")
 
         try:
