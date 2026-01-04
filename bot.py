@@ -7,24 +7,26 @@ import uuid
 from datetime import datetime
 from flask import Flask, request, jsonify
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, BaseFilter
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Message
 
 # Filtros personalizados para imágenes
-class ImageDocumentFilter(BaseFilter):
+class ImageDocumentFilter:
     """Filtro para documentos que son imágenes"""
-    def filter(self, message: Message) -> bool:
-        if message.document:
+    def __call__(self, update):
+        message = update.message or update.channel_post
+        if message and message.document:
             mime_type = message.document.mime_type
             if mime_type and mime_type.startswith('image/'):
                 supported_formats = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
                 return mime_type.lower() in supported_formats
         return False
 
-class StaticStickerFilter(BaseFilter):
+class StaticStickerFilter:
     """Filtro para stickers estáticos (no animados)"""
-    def filter(self, message: Message) -> bool:
-        if message.sticker:
+    def __call__(self, update):
+        message = update.message or update.channel_post
+        if message and message.sticker:
             return not message.sticker.is_animated
         return False
 
