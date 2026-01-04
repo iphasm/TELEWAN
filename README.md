@@ -126,6 +126,10 @@ El bot soporta múltiples modelos con diferentes características:
 
 El bot incluye **inteligencia artificial avanzada** para mejorar automáticamente tus captions usando el modelo **Molmo2 de WaveSpeed AI**.
 
+**Parámetros de optimización:**
+- **Modo**: `video` (optimización específica para generación de video)
+- **Estilo**: `realistic` (estilo realista con elementos cinematográficos)
+
 #### 🎯 **Cómo funciona:**
 - **Análisis inteligente**: El bot analiza tu imagen y caption para detectar si necesita mejoras
 - **Optimización contextual**: Usa tanto la imagen como tu texto original para generar prompts más precisos
