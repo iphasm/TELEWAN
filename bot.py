@@ -7,24 +7,30 @@ import uuid
 from datetime import datetime
 from flask import Flask, request, jsonify
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, BaseFilter
 from telegram import Message
 
 # Filtros personalizados para imágenes
-def image_document_filter(message: Message) -> bool:
+class ImageDocumentFilter(BaseFilter):
     """Filtro para documentos que son imágenes"""
-    if message.document:
-        mime_type = message.document.mime_type
-        if mime_type and mime_type.startswith('image/'):
-            supported_formats = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
-            return mime_type.lower() in supported_formats
-    return False
+    def filter(self, message: Message) -> bool:
+        if message.document:
+            mime_type = message.document.mime_type
+            if mime_type and mime_type.startswith('image/'):
+                supported_formats = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
+                return mime_type.lower() in supported_formats
+        return False
 
-def static_sticker_filter(message: Message) -> bool:
+class StaticStickerFilter(BaseFilter):
     """Filtro para stickers estáticos (no animados)"""
-    if message.sticker:
-        return not message.sticker.is_animated
-    return False
+    def filter(self, message: Message) -> bool:
+        if message.sticker:
+            return not message.sticker.is_animated
+        return False
+
+# Instancias de los filtros
+image_document_filter = ImageDocumentFilter()
+static_sticker_filter = StaticStickerFilter()
 from PIL import Image
 from config import Config
 
