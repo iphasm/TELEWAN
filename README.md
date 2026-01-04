@@ -123,6 +123,15 @@ El bot soporta múltiples modelos con diferentes características:
 
 **Sin caption:** Se usa automáticamente el prompt cinematográfico predefinido con escena íntima y composición visual detallada.
 
+### 📹 **Videos Entregados:**
+
+Cada video generado incluye como **caption el prompt completo** utilizado para crearlo:
+
+- 🎬 **Prompt utilizado:** [texto completo del prompt]
+- 🎨 **Prompt optimizado automáticamente** (si aplica)
+
+Esto te permite ver exactamente qué prompt se usó, especialmente útil cuando se optimiza automáticamente o cuando usas el prompt por defecto.
+
 ### 🤖 **Optimización Automática de Prompts**
 
 El bot incluye **inteligencia artificial avanzada** para mejorar automáticamente tus captions usando el modelo **Molmo2 de WaveSpeed AI**.
