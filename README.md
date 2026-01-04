@@ -129,6 +129,7 @@ El bot incluye **inteligencia artificial avanzada** para mejorar automáticament
 - **Mejora automática**: Agrega automáticamente elementos de iluminación, movimiento y composición
 - **Procesamiento silencioso**: La optimización ocurre en segundo plano sin interrupciones
 - **Modo video especializado**: Optimización específicamente diseñada para generación de video
+- **Manejo robusto de errores**: Si la optimización falla, continúa automáticamente con tu prompt original
 - **Indicador sutil**: Solo muestra "🎨 Video con prompt optimizado" cuando se completa exitosamente
 - **Mejor calidad**: Prompts optimizados generan videos de mejor calidad automáticamente
 
