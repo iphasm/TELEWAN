@@ -528,14 +528,9 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
             # Verificar si el caption necesita optimización con IA (solo si está activado)
             auto_optimize_enabled = context.user_data.get('auto_optimize', True)  # Por defecto activado
-            if auto_optimize_enabled and should_optimize_prompt(original_caption):
-                # Informar al usuario que se está optimizando el prompt
-                optimizing_msg = await message.reply_text(
-                    "🤖 **Optimizando prompt con IA...**\n\n"
-                    f"Analizando tu descripción: _{original_caption[:50]}{'...' if len(original_caption) > 50 else ''}_\n\n"
-                    "Generaré un prompt más detallado para mejores resultados."
-                )
+            prompt_optimized = False  # Flag para indicar si se optimizó el prompt
 
+            if auto_optimize_enabled and should_optimize_prompt(original_caption):
                 # Optimizar el prompt usando Molmo2 (necesitamos tener photo_file_url listo)
                 # Primero obtener la URL de la imagen
                 if image_type == "photo":
@@ -550,7 +545,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                     photo_file = await context.bot.get_file(message.sticker.file_id)
                 else:
                     prompt = original_caption
-                    await optimizing_msg.edit_text("❌ Tipo de imagen no soportado.")
+                    await processing_msg.edit_text("❌ Tipo de imagen no soportado.")
                     return
 
                 # Construir URL correcta para la imagen
@@ -561,24 +556,15 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                     # file_path es relativo, construir URL completa
                     photo_file_url = f"https://api.telegram.org/file/bot{Config.TELEGRAM_BOT_TOKEN}/{photo_file.file_path}"
 
-                # Optimizar el prompt usando Molmo2
+                # Optimizar el prompt usando Molmo2 (en silencio)
                 optimized_prompt = optimize_user_prompt(photo_file_url, original_caption)
 
                 if optimized_prompt and optimized_prompt != original_caption:
                     prompt = optimized_prompt
-                    await optimizing_msg.edit_text(
-                        "✅ **Prompt optimizado exitosamente!**\n\n"
-                        f"📝 **Original:** {original_caption[:50]}{'...' if len(original_caption) > 50 else ''}\n\n"
-                        f"🎨 **Optimizado:** {optimized_prompt}\n\n"
-                        "Generando video con el prompt mejorado..."
-                    )
-                    logger.info(f"Prompt optimizado: '{original_caption}' → '{optimized_prompt[:100]}...'")
+                    prompt_optimized = True  # Marcar que se optimizó
+                    logger.info(f"Prompt optimizado silenciosamente: '{original_caption}' → '{optimized_prompt[:100]}...'")
                 else:
                     prompt = original_caption
-                    await optimizing_msg.edit_text(
-                        "⚠️ **Optimización no disponible**\n\n"
-                        "Usando tu caption original. Generando video..."
-                    )
                     logger.info("Optimización falló, usando caption original")
             else:
                 prompt = original_caption
@@ -689,7 +675,10 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                                 )
 
                                             # Confirmar envío exitoso
-                                            await processing_msg.edit_text("✅ ¡Video enviado exitosamente!")
+                                            success_msg = "✅ ¡Video enviado exitosamente!"
+                                            if prompt_optimized:
+                                                success_msg += "\n\n🎨 Video con prompt optimizado"
+                                            await processing_msg.edit_text(success_msg)
                                             logger.info(f"Video sent successfully to user {update.effective_chat.id}")
                                             video_sent = True
                                             return
@@ -1016,7 +1005,10 @@ async def process_video_generation(update: Update, context: ContextTypes.DEFAULT
                                         )
 
                                     # Confirmar envío exitoso
-                                    await processing_msg.edit_text("✅ ¡Video enviado exitosamente!")
+                                    success_msg = "✅ ¡Video enviado exitosamente!"
+                                    if prompt_optimized:
+                                        success_msg += "\n\n🎨 Video con prompt optimizado"
+                                    await processing_msg.edit_text(success_msg)
                                     logger.info(f"Video sent successfully to user {update.effective_chat.id}")
                                     video_sent = True
                                     return
