@@ -152,7 +152,7 @@ def optimize_user_prompt(image_url: str, original_caption: str = "") -> str:
         optimizer_text = original_caption
 
         # Enviar imagen al optimizer con texto mejorado
-        result = wavespeed.optimize_prompt(image_url, text=optimizer_text, mode="image", style="realistic")
+        result = wavespeed.optimize_prompt(image_url, text=optimizer_text, mode="video", style="realistic")
 
         if result.get('data') and result['data'].get('id'):
             request_id = result['data']['id']
@@ -343,7 +343,7 @@ class WavespeedAPI:
         """
         return self.generate_video(prompt, image_url, model=model)
 
-    def optimize_prompt(self, image_url: str, text: str = "", mode: str = "image", style: str = "realistic") -> dict:
+    def optimize_prompt(self, image_url: str, text: str = "", mode: str = "video", style: str = "realistic") -> dict:
         """
         Optimiza un prompt basado en una imagen usando Molmo2
         """
@@ -353,7 +353,7 @@ class WavespeedAPI:
             "enable_sync_mode": False,
             "image": image_url,
             "text": prompt,  # El caption original del usuario
-            "mode": "image",
+            "mode": "video",
             "style": "realistic"
         }
 

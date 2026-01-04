@@ -38,7 +38,7 @@ def test_prompt_optimizer():
     try:
         # Paso 1: Enviar imagen al optimizer
         print("\n📤 Enviando imagen al optimizer...")
-        result = wavespeed.optimize_prompt(test_image_url, text=test_caption, mode="image", style="realistic")
+        result = wavespeed.optimize_prompt(test_image_url, text=test_caption, mode="video", style="realistic")
 
         if result.get('data') and result['data'].get('id'):
             request_id = result['data']['id']
