@@ -529,9 +529,13 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
     """
     try:
         message = update.message
-        user_id = message.from_user.id
-        chat_id = message.chat.id
-        message_id = message.message_id
+        if not message:
+            logger.error("Mensaje vacío recibido")
+            return
+
+        user_id = message.from_user.id if message.from_user else "unknown"
+        chat_id = message.chat.id if message.chat else "unknown"
+        message_id = message.message_id if hasattr(message, 'message_id') else "unknown"
 
         # Verificar si ya hay un procesamiento activo para este chat
         processing_key = f"processing_{chat_id}"
@@ -586,13 +590,19 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                     # Primero obtener la URL de la imagen
                     if image_type == "photo":
                         # Foto directa - obtener la mejor calidad
+                        if not message.photo or len(message.photo) == 0:
+                            raise ValueError("No se encontraron fotos en el mensaje")
                         photo = message.photo[-1]  # La última es la de mejor calidad
                         photo_file = await context.bot.get_file(photo.file_id)
                     elif image_type == "document":
                         # Documento de imagen
+                        if not message.document:
+                            raise ValueError("No se encontró documento en el mensaje")
                         photo_file = await context.bot.get_file(message.document.file_id)
                     elif image_type == "sticker":
                         # Sticker estático
+                        if not message.sticker:
+                            raise ValueError("No se encontró sticker en el mensaje")
                         photo_file = await context.bot.get_file(message.sticker.file_id)
                     else:
                         prompt = original_caption
@@ -817,9 +827,23 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             )
 
     except Exception as e:
-        logger.error(f"Error procesando foto: {e}")
+        logger.error(f"❌ Error crítico procesando imagen: {e}")
+        logger.error(f"   Tipo de error: {type(e).__name__}")
+        logger.error(f"   Chat ID: {chat_id}, Message ID: {message_id}")
+        logger.error(f"   Tipo de imagen: {media_type}")
+        logger.error(f"   Modelo: {user_model}")
+
+        # Mostrar información adicional si es posible
+        if hasattr(e, '__traceback__'):
+            import traceback
+            logger.error(f"   Traceback completo:\n{traceback.format_exc()}")
+
         await update.message.reply_text(
-            "❌ Ocurrió un error inesperado. Por favor, inténtalo de nuevo."
+            "❌ Ocurrió un error inesperado. Por favor, inténtalo de nuevo.\n\n"
+            f"**Detalles técnicos:**\n"
+            f"• Error: `{type(e).__name__}`\n"
+            f"• Mensaje: `{str(e)}`\n\n"
+            f"💡 Contacta al administrador si el problema persiste."
         )
     finally:
         # Limpiar el flag de procesamiento
