@@ -33,7 +33,7 @@ def test_prompt_optimizer():
     test_caption = "una mujer hermosa"
 
     print(f"🖼️  Usando imagen de prueba: {test_image_url}")
-    print(f"📝 Usando caption de prueba: {test_caption}")
+    print(f"📝 Usando caption de prueba: '{test_caption}' (se envía tal cual)")
 
     try:
         # Paso 1: Enviar imagen al optimizer
