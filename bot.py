@@ -496,7 +496,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                     await optimizing_msg.edit_text(
                         "✅ **Prompt optimizado exitosamente!**\n\n"
                         f"📝 **Original:** {original_caption[:50]}{'...' if len(original_caption) > 50 else ''}\n\n"
-                        f"🎨 **Optimizado:** {optimized_prompt[:100]}{'...' if len(optimized_prompt) > 100 else ''}\n\n"
+                        f"🎨 **Optimizado:** {optimized_prompt}\n\n"
                         "Generando video con el prompt mejorado..."
                     )
                     logger.info(f"Prompt optimizado: '{original_caption}' → '{optimized_prompt[:100]}...'")

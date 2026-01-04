@@ -137,9 +137,9 @@ El bot incluye **inteligencia artificial avanzada** para mejorar automáticament
 
 | **Tu Caption** | **Optimizado automáticamente** |
 |---|---|
-| "una mujer hermosa" | "A stunning cinematic portrait of a beautiful woman with flowing hair, dramatic lighting, shallow depth of field, 4K resolution, film grain texture" |
-| "paisaje bonito" | "Breathtaking landscape with majestic mountains, crystal clear lake, golden hour lighting, volumetric clouds, hyper-realistic details, cinematic composition" |
-| "foto" | "Professional cinematic shot with dramatic lighting, shallow depth of field, bokeh background, film grain, atmospheric mood, 4K resolution" |
+| "una mujer hermosa" | "A stunning cinematic portrait of a beautiful woman with flowing hair, dramatic lighting, shallow depth of field, 4K resolution, film grain texture, atmospheric mood, hyper-realistic skin details, professional composition" |
+| "paisaje bonito" | "Breathtaking landscape with majestic mountains, crystal clear lake reflecting sunlight, golden hour lighting creating warm tones, volumetric clouds with dramatic shadows, hyper-realistic details, cinematic composition, 8K resolution" |
+| "foto" | "Professional cinematic shot with dramatic Rembrandt lighting, shallow depth of field creating beautiful bokeh background, film grain texture, atmospheric mood with subtle haze, 4K resolution, hyper-detailed composition" |
 
 #### ⚙️ **Control de optimización:**
 - **Activado por defecto**: La optimización automática está activada para todos los usuarios
@@ -150,6 +150,7 @@ El bot incluye **inteligencia artificial avanzada** para mejorar automáticament
 - **Sé específico**: Incluye detalles sobre movimiento, iluminación y estilo
 - **Deja que la IA ayude**: Captions cortos se optimizan automáticamente
 - **Combina ambos**: Usa captions detallados + optimización para resultados excepcionales
+- **Prompt completo**: El bot muestra el prompt optimizado completo para tu revisión
 
 ### 🔍 **Verificación Múltiple de Imágenes**
 
