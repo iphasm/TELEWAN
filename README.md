@@ -5,14 +5,16 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
 ## 🚀 Características
 
 - 📸 **Transformación de fotos a videos**: Convierte imágenes estáticas en videos animados
-- 🎬 **IA avanzada**: Usa el modelo Wan 2.2 I2V 480p Ultra Fast de Wavespeed
-- 📝 **Prompts personalizados**: Utiliza el caption de la foto como descripción para generar el video
+- 🎬 **IA avanzada**: Usa múltiples modelos Wan 2.2 de Wavespeed (Ultra Fast, Fast, Quality, Text-to-Video)
+- 🤖 **Optimización automática de prompts**: IA analiza tus captions y los mejora automáticamente para mejores resultados
+- 📝 **Prompts inteligentes**: Utiliza el caption de la foto como descripción, con optimización automática opcional
 - ⚡ **Procesamiento ultra rápido**: Optimizado para respuestas rápidas con polling eficiente y robusto
 - ⏱️ **Videos de 8 segundos**: Duración extendida para mejores resultados
 - 💾 **Almacenamiento persistente**: Fotos y videos guardados en volumen con nombres únicos
 - 🔄 **Soporte para forwards**: Procesa fotos forwardeadas que tengan captions descriptivos
 - 🚫 **Negative prompt automática**: Filtros integrados para evitar elementos no deseados
 - 🔒 **Seguro**: Manejo adecuado de archivos y configuración
+- 🎯 **Múltiples formatos**: Soporta fotos, documentos de imagen y stickers estáticos
 
 ## 📋 Requisitos
 
@@ -117,6 +119,38 @@ El bot soporta múltiples modelos con diferentes características:
 
 **Sin caption:** Se usa automáticamente el prompt cinematográfico predefinido con escena íntima y composición visual detallada.
 
+### 🤖 **Optimización Automática de Prompts**
+
+El bot incluye **inteligencia artificial avanzada** para mejorar automáticamente tus captions usando el modelo **Molmo2 de WaveSpeed AI**.
+
+#### 🎯 **Cómo funciona:**
+- **Análisis inteligente**: El bot analiza tu imagen y caption para detectar si necesita mejoras
+- **Optimización automática**: Convierte captions simples en prompts técnicos detallados
+- **Mejor calidad**: Prompts optimizados generan videos de mejor calidad automáticamente
+
+#### 📝 **Cuándo se optimiza:**
+- ✅ Captions muy cortos (< 10 caracteres)
+- ✅ Palabras genéricas ("foto", "imagen", "test", "hola")
+- ✅ Descripciones simples que necesitan más detalle técnico
+
+#### 🎨 **Ejemplos de optimización:**
+
+| **Tu Caption** | **Optimizado automáticamente** |
+|---|---|
+| "una mujer hermosa" | "A stunning cinematic portrait of a beautiful woman with flowing hair, dramatic lighting, shallow depth of field, 4K resolution, film grain texture" |
+| "paisaje bonito" | "Breathtaking landscape with majestic mountains, crystal clear lake, golden hour lighting, volumetric clouds, hyper-realistic details, cinematic composition" |
+| "foto" | "Professional cinematic shot with dramatic lighting, shallow depth of field, bokeh background, film grain, atmospheric mood, 4K resolution" |
+
+#### ⚙️ **Control de optimización:**
+- **Activado por defecto**: La optimización automática está activada para todos los usuarios
+- **Comando `/optimize`**: Activa/desactiva la optimización automática
+- **Configuración por usuario**: Cada usuario puede elegir su preferencia
+
+#### 💡 **Tips para mejores resultados:**
+- **Sé específico**: Incluye detalles sobre movimiento, iluminación y estilo
+- **Deja que la IA ayude**: Captions cortos se optimizan automáticamente
+- **Combina ambos**: Usa captions detallados + optimización para resultados excepcionales
+
 ### 🔍 **Verificación Múltiple de Imágenes**
 
 El bot utiliza **4 métodos de detección** para asegurar que reconoce todo tipo de imágenes:
@@ -191,13 +225,13 @@ El bot incluye configuración personalizable en `config.py`:
 ### 🤖 Comandos básicos:
 - `/start` - Inicia el bot y muestra instrucciones
 - `/help` - Muestra ayuda completa
-- `/models` - Lista todos los modelos disponibles de Wavespeed AI
 
 ### 🎬 Comandos de generación:
+- `/models` - Lista todos los modelos disponibles de Wavespeed AI
 - `/textvideo [prompt]` - Genera video solo desde texto (sin imagen)
 - `/quality` - Activa modo 720p alta calidad para próximas imágenes
 - `/preview` - Activa modo 480p ultra rápido para próximas imágenes
-- `/help` - Muestra ayuda y comandos disponibles
+- `/optimize` - Activa/desactiva optimización automática de prompts con IA
 
 ## 📁 Estructura del proyecto
 
