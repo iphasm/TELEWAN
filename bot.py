@@ -545,7 +545,6 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         # Marcar que hay un procesamiento activo
         context.user_data[processing_key] = True
-        logger.info(f"🔄 Iniciando procesamiento para chat {chat_id}, mensaje {message_id}, tipo: {media_type}")
 
         # Verificar autenticación si está configurada
         if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
@@ -571,6 +570,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             media_type = f"sticker (animated: {message.sticker.is_animated})"
 
         logger.info(f"Imagen recibida - User: {user_id}, Tipo: {media_type}, Modelo: {user_model}, Forward: {bool(message.forward_origin)}, Caption: {bool(message.caption)}")
+        logger.info(f"🔄 Iniciando procesamiento para chat {chat_id}, mensaje {message_id}, tipo: {media_type}")
 
         # Procesar el prompt con optimización automática
         if not message.caption:
