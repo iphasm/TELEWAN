@@ -53,6 +53,69 @@ DEFAULT_PROMPT = (
     "Cinematic composition, film grain subtly present, emphasizing emotional gravity and visual precision."
 )
 
+def enhance_prompt_for_video(raw_prompt: str, original_caption: str = "") -> str:
+    """
+    Mejora un prompt optimizado para que sea más adecuado para generación de video
+    Agrega elementos cinematográficos, movimiento y atmósfera
+    """
+    # Si el prompt ya es muy largo y detallado, devolverlo tal cual
+    if len(raw_prompt) > 200:
+        return raw_prompt
+
+    # Elementos cinematográficos a agregar
+    cinematic_elements = [
+        "cinematic shot",
+        "dramatic lighting",
+        "slow motion",
+        "atmospheric",
+        "high detail",
+        "professional composition",
+        "film grain",
+        "depth of field",
+        "dynamic camera movement",
+        "emotional atmosphere"
+    ]
+
+    # Si el prompt no contiene suficientes elementos cinematográficos, mejorarlos
+    prompt_lower = raw_prompt.lower()
+    cinematic_count = sum(1 for element in cinematic_elements if any(word in prompt_lower for word in element.split()))
+
+    if cinematic_count < 3:
+        # Agregar elementos cinematográficos faltantes
+        enhancements = []
+
+        if "cinematic" not in prompt_lower and "film" not in prompt_lower:
+            enhancements.append("cinematic")
+
+        if "lighting" not in prompt_lower and "light" not in prompt_lower:
+            enhancements.append("dramatic lighting")
+
+        if "motion" not in prompt_lower and "movement" not in prompt_lower:
+            enhancements.append("smooth camera movement")
+
+        if "atmospheric" not in prompt_lower and "atmosphere" not in prompt_lower:
+            enhancements.append("atmospheric mood")
+
+        if "detail" not in prompt_lower and "detailed" not in prompt_lower:
+            enhancements.append("hyper-detailed")
+
+        if "professional" not in prompt_lower:
+            enhancements.append("professional cinematography")
+
+        # Construir prompt mejorado
+        enhanced_prompt = raw_prompt
+        if enhancements:
+            enhancement_text = ", ".join(enhancements)
+            enhanced_prompt = f"{raw_prompt}, {enhancement_text}"
+
+        # Agregar resolución y calidad al final
+        if "4k" not in enhanced_prompt.lower() and "resolution" not in enhanced_prompt.lower():
+            enhanced_prompt += ", 4K resolution"
+
+        return enhanced_prompt
+
+    return raw_prompt
+
 def should_optimize_prompt(caption: str) -> bool:
     """
     Determina si un caption necesita optimización usando IA
@@ -85,8 +148,16 @@ def optimize_user_prompt(image_url: str, original_caption: str = "") -> str:
     try:
         wavespeed = WavespeedAPI()
 
-        # Enviar imagen al optimizer
-        result = wavespeed.optimize_prompt(image_url, text=original_caption, mode="video", style="realistic")
+        # Crear prompt más específico para el optimizer
+        if original_caption and len(original_caption.strip()) > 0:
+            # Si hay caption del usuario, usarlo como base pero agregar contexto
+            optimizer_text = f"Create a detailed, cinematic video description based on: {original_caption}. Make it vivid, atmospheric, and optimized for AI video generation."
+        else:
+            # Si no hay caption, usar un prompt genérico pero más específico
+            optimizer_text = "Create a highly detailed, cinematic video description with dramatic lighting, emotional atmosphere, and vivid visual elements optimized for AI video generation."
+
+        # Enviar imagen al optimizer con texto mejorado
+        result = wavespeed.optimize_prompt(image_url, text=optimizer_text, mode="image", style="cinematic")
 
         if result.get('data') and result['data'].get('id'):
             request_id = result['data']['id']
@@ -105,8 +176,14 @@ def optimize_user_prompt(image_url: str, original_caption: str = "") -> str:
 
                     if status == 'completed':
                         if task_data.get('outputs') and len(task_data['outputs']) > 0:
-                            optimized_prompt = task_data['outputs'][0]
-                            logger.info("Prompt optimization completed successfully")
+                            raw_optimized = task_data['outputs'][0]
+                            logger.info(f"Raw optimizer result: {raw_optimized[:100]}...")
+                            logger.info(f"Original caption: '{original_caption}'")
+
+                            # Mejorar el prompt para que sea más cinematográfico y adecuado para video
+                            optimized_prompt = enhance_prompt_for_video(raw_optimized, original_caption)
+                            logger.info(f"Enhanced prompt: {optimized_prompt[:100]}...")
+                            logger.info(f"Final prompt length: {len(optimized_prompt)} characters")
                             return optimized_prompt
                         else:
                             logger.warning("Prompt optimization completed but no outputs")
@@ -271,7 +348,7 @@ class WavespeedAPI:
         """
         return self.generate_video(prompt, image_url, model=model)
 
-    def optimize_prompt(self, image_url: str, text: str = "", mode: str = "image", style: str = "realistic") -> dict:
+    def optimize_prompt(self, image_url: str, text: str = "", mode: str = "image", style: str = "cinematic") -> dict:
         """
         Optimiza un prompt basado en una imagen usando Molmo2
         """
@@ -282,7 +359,7 @@ class WavespeedAPI:
             "image": image_url,
             "text": prompt,  # El caption original del usuario
             "mode": "image",
-            "style": "realistic"
+            "style": "cinematic"  # Cambiar a estilo más creativo/cinematográfico
         }
 
         try:
