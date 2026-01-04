@@ -53,6 +53,80 @@ DEFAULT_PROMPT = (
     "Cinematic composition, film grain subtly present, emphasizing emotional gravity and visual precision."
 )
 
+def should_optimize_prompt(caption: str) -> bool:
+    """
+    Determina si un caption necesita optimización usando IA
+    """
+    if not caption or len(caption.strip()) < 10:
+        return True
+
+    # Palabras clave que indican captions genéricos o cortos
+    generic_words = ['foto', 'imagen', 'picture', 'img', 'pic', 'test', 'prueba', 'hola', 'hi', 'ok']
+    caption_lower = caption.lower().strip()
+
+    # Si el caption es muy corto o contiene palabras genéricas
+    if len(caption_lower.split()) <= 3 or any(word in caption_lower for word in generic_words):
+        return True
+
+    # Si parece ser un prompt ya optimizado (contiene muchas palabras técnicas)
+    technical_words = ['cinematic', 'detailed', 'realistic', 'motion', 'lighting', 'composition', 'atmospheric']
+    technical_count = sum(1 for word in technical_words if word in caption_lower)
+
+    # Si ya tiene elementos técnicos, probablemente no necesita optimización
+    if technical_count >= 2:
+        return False
+
+    return True
+
+def optimize_user_prompt(image_url: str, original_caption: str = "") -> str:
+    """
+    Optimiza un prompt de usuario usando la API de Molmo2
+    """
+    try:
+        wavespeed = WavespeedAPI()
+
+        # Enviar imagen al optimizer
+        result = wavespeed.optimize_prompt(image_url, mode="image", style="default")
+
+        if result.get('data') and result['data'].get('id'):
+            request_id = result['data']['id']
+            logger.info(f"Prompt optimization started. Request ID: {request_id}")
+
+            # Esperar resultado (máximo 30 segundos)
+            max_attempts = 60  # 30 segundos
+            attempt = 0
+
+            while attempt < max_attempts:
+                status_result = wavespeed.get_prompt_optimizer_status(request_id)
+
+                if status_result.get('data'):
+                    task_data = status_result['data']
+                    status = task_data.get('status')
+
+                    if status == 'completed':
+                        if task_data.get('outputs') and len(task_data['outputs']) > 0:
+                            optimized_prompt = task_data['outputs'][0]
+                            logger.info("Prompt optimization completed successfully")
+                            return optimized_prompt
+                        else:
+                            logger.warning("Prompt optimization completed but no outputs")
+                            break
+
+                    elif status == 'failed':
+                        error_msg = task_data.get('error', 'Unknown error')
+                        logger.error(f"Prompt optimization failed: {error_msg}")
+                        break
+
+                attempt += 1
+                time.sleep(0.5)
+
+        logger.warning("Prompt optimization failed or timed out, using original caption")
+        return original_caption or DEFAULT_PROMPT
+
+    except Exception as e:
+        logger.error(f"Error in prompt optimization: {e}")
+        return original_caption or DEFAULT_PROMPT
+
 def generate_serial_filename(prefix: str, extension: str) -> str:
     """
     Genera un nombre de archivo único con timestamp y UUID
@@ -197,6 +271,41 @@ class WavespeedAPI:
         """
         return self.generate_video(prompt, image_url, model=model)
 
+    def optimize_prompt(self, image_url: str, mode: str = "image", style: str = "default") -> dict:
+        """
+        Optimiza un prompt basado en una imagen usando Molmo2
+        """
+        endpoint = f"{self.base_url}/api/v3/wavespeed-ai/molmo2/prompt-optimizer"
+
+        payload = {
+            "enable_sync_mode": False,
+            "image": image_url,
+            "mode": mode,
+            "style": style
+        }
+
+        try:
+            response = requests.post(endpoint, json=payload, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error en prompt optimizer: {e}")
+            raise
+
+    def get_prompt_optimizer_status(self, request_id: str) -> dict:
+        """
+        Obtiene el estado de una tarea de optimización de prompt
+        """
+        endpoint = f"{self.base_url}/api/v3/predictions/{request_id}/result"
+
+        try:
+            response = requests.get(endpoint, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error obteniendo estado del prompt optimizer: {e}")
+            raise
+
     def get_available_models(self) -> dict:
         """
         Retorna información sobre los modelos disponibles
@@ -331,11 +440,8 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         logger.info(f"Imagen recibida - User: {user_id}, Tipo: {media_type}, Modelo: {user_model}, Forward: {bool(message.forward_origin)}, Caption: {bool(message.caption)}")
 
-        # Usar caption si existe, sino usar prompt por defecto
-        if message.caption:
-            prompt = message.caption
-            logger.info(f"Usando caption personalizado: '{prompt[:50]}...'")
-        else:
+        # Procesar el prompt con optimización automática
+        if not message.caption:
             prompt = DEFAULT_PROMPT
             # Informar al usuario que se está usando el prompt por defecto
             await message.reply_text(
@@ -344,6 +450,66 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 "💡 **Tip:** Para personalizar el video, agrega un caption descriptivo a tu imagen."
             )
             logger.info("Usando prompt por defecto (sin caption proporcionado)")
+        else:
+            original_caption = message.caption
+
+            # Verificar si el caption necesita optimización con IA (solo si está activado)
+            auto_optimize_enabled = context.user_data.get('auto_optimize', True)  # Por defecto activado
+            if auto_optimize_enabled and should_optimize_prompt(original_caption):
+                # Informar al usuario que se está optimizando el prompt
+                optimizing_msg = await message.reply_text(
+                    "🤖 **Optimizando prompt con IA...**\n\n"
+                    f"Analizando tu descripción: _{original_caption[:50]}{'...' if len(original_caption) > 50 else ''}_\n\n"
+                    "Generaré un prompt más detallado para mejores resultados."
+                )
+
+                # Optimizar el prompt usando Molmo2 (necesitamos tener photo_file_url listo)
+                # Primero obtener la URL de la imagen
+                if image_type == "photo":
+                    # Foto directa - obtener la mejor calidad
+                    photo = message.photo[-1]  # La última es la de mejor calidad
+                    photo_file = await context.bot.get_file(photo.file_id)
+                elif image_type == "document":
+                    # Documento de imagen
+                    photo_file = await context.bot.get_file(message.document.file_id)
+                elif image_type == "sticker":
+                    # Sticker estático
+                    photo_file = await context.bot.get_file(message.sticker.file_id)
+                else:
+                    prompt = original_caption
+                    await optimizing_msg.edit_text("❌ Tipo de imagen no soportado.")
+                    return
+
+                # Construir URL correcta para la imagen
+                if photo_file.file_path.startswith('http'):
+                    # file_path ya es una URL completa
+                    photo_file_url = photo_file.file_path
+                else:
+                    # file_path es relativo, construir URL completa
+                    photo_file_url = f"https://api.telegram.org/file/bot{Config.TELEGRAM_BOT_TOKEN}/{photo_file.file_path}"
+
+                # Optimizar el prompt usando Molmo2
+                optimized_prompt = optimize_user_prompt(photo_file_url, original_caption)
+
+                if optimized_prompt and optimized_prompt != original_caption:
+                    prompt = optimized_prompt
+                    await optimizing_msg.edit_text(
+                        "✅ **Prompt optimizado exitosamente!**\n\n"
+                        f"📝 **Original:** {original_caption[:50]}{'...' if len(original_caption) > 50 else ''}\n\n"
+                        f"🎨 **Optimizado:** {optimized_prompt[:100]}{'...' if len(optimized_prompt) > 100 else ''}\n\n"
+                        "Generando video con el prompt mejorado..."
+                    )
+                    logger.info(f"Prompt optimizado: '{original_caption}' → '{optimized_prompt[:100]}...'")
+                else:
+                    prompt = original_caption
+                    await optimizing_msg.edit_text(
+                        "⚠️ **Optimización no disponible**\n\n"
+                        "Usando tu caption original. Generando video..."
+                    )
+                    logger.info("Optimización falló, usando caption original")
+            else:
+                prompt = original_caption
+                logger.info(f"Usando caption personalizado (sin optimización): '{prompt[:50]}...'")
 
         # Múltiples métodos de verificación de imagen
         is_image, image_type, error_msg = is_image_message(message)
@@ -548,13 +714,21 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /start - Inicia el bot y muestra instrucciones
 /help - Muestra esta ayuda
 
+🎬 **Modelos de video:**
+/models - Ver todos los modelos disponibles
+/preview - Modo preview rápida (480p ultra fast)
+/quality - Videos de alta calidad (720p)
+/textvideo - Generar video solo desde texto
+/optimize - Activar/desactivar optimización automática de prompts
+
 📸 **Cómo generar videos:**
 - Envía una foto con un caption descriptivo
-- El bot usará el caption como prompt para crear un video con IA
-- Los videos se generan usando el modelo Wan 2.2 480p Fast
+- El bot optimizará automáticamente el prompt con IA para mejores resultados
+- Soporta fotos, documentos de imagen y stickers estáticos
 
 💡 **Tips para mejores resultados:**
 - Sé específico en tu descripción
+- La IA optimizará automáticamente captions cortos o genéricos
 - Incluye detalles sobre movimiento y estilo
 - Prueba con diferentes tipos de escenas
 
@@ -686,6 +860,43 @@ async def handle_preview_video(update: Update, context: ContextTypes.DEFAULT_TYP
         "🎯 Para videos de alta calidad, usa `/quality`",
         parse_mode='Markdown'
     )
+
+async def handle_optimize(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador para el comando /optimize - activar/desactivar optimización automática de prompts"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(
+            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
+        )
+        return
+
+    # Toggle optimización automática (por defecto activada)
+    current_state = context.user_data.get('auto_optimize', True)
+    context.user_data['auto_optimize'] = not current_state
+    new_state = context.user_data['auto_optimize']
+
+    if new_state:
+        await update.message.reply_text(
+            "🤖 **Optimización Automática ACTIVADA** ✨\n\n"
+            "Ahora tus captions serán automáticamente mejorados usando IA cuando:\n"
+            "• Sean muy cortos (< 10 caracteres)\n"
+            "• Contengan palabras genéricas ('foto', 'imagen', etc.)\n"
+            "• Parezcan necesitar más detalle técnico\n\n"
+            "🎨 **Mejora:** Tus videos tendrán mejor calidad automáticamente.\n\n"
+            "💡 Usa `/optimize` nuevamente para desactivar.",
+            parse_mode='Markdown'
+        )
+    else:
+        await update.message.reply_text(
+            "🚫 **Optimización Automática DESACTIVADA**\n\n"
+            "Ahora usarás tus captions exactamente como los escribas.\n\n"
+            "💡 **Tip:** Usa `/optimize` nuevamente para activar la optimización automática.",
+            parse_mode='Markdown'
+        )
+
+    logger.info(f"Usuario {user_id} cambió optimización automática a: {new_state}")
 
 async def process_video_generation(update: Update, context: ContextTypes.DEFAULT_TYPE,
                                  processing_msg, wavespeed: WavespeedAPI, request_id: str, prompt: str):
@@ -837,6 +1048,7 @@ def main() -> None:
         application.add_handler(CommandHandler("textvideo", handle_text_video))
         application.add_handler(CommandHandler("quality", handle_quality_video))
         application.add_handler(CommandHandler("preview", handle_preview_video))
+        application.add_handler(CommandHandler("optimize", handle_optimize))
         # Múltiples handlers para diferentes tipos de imágenes
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
         application.add_handler(MessageHandler(image_document_filter, handle_document_image))
@@ -920,6 +1132,7 @@ def main() -> None:
         application.add_handler(CommandHandler("textvideo", handle_text_video))
         application.add_handler(CommandHandler("quality", handle_quality_video))
         application.add_handler(CommandHandler("preview", handle_preview_video))
+        application.add_handler(CommandHandler("optimize", handle_optimize))
         # Múltiples handlers para diferentes tipos de imágenes
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
         application.add_handler(MessageHandler(image_document_filter, handle_document_image))
