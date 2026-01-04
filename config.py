@@ -15,6 +15,17 @@ class Config:
     WAVESPEED_API_KEY = os.getenv('WAVESPEED_API_KEY')
     WAVESPEED_BASE_URL = os.getenv('WAVESPEED_BASE_URL', 'https://api.wavespeed.ai')
 
+    # Modelos disponibles de Wavespeed
+    AVAILABLE_MODELS = {
+        'ultra_fast': 'wan-2.2/i2v-480p-ultra-fast',
+        'fast': 'wan-2.2/i2v-480p-fast',
+        'quality': 'wan-2.2/i2v-720p-quality',
+        'text_to_video': 'wan-2.2/t2v-480p-ultra-fast'
+    }
+
+    # Modelo por defecto
+    DEFAULT_MODEL = os.getenv('DEFAULT_MODEL', 'ultra_fast')
+
     # Configuración del bot
     MAX_VIDEO_DURATION = 8  # segundos
     ASPECT_RATIO = "16:9"

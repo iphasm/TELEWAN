@@ -96,18 +96,45 @@ class WavespeedAPI:
             'Content-Type': 'application/json'
         }
 
-    def generate_video(self, prompt: str, image_url: str = None) -> dict:
+    def generate_video(self, prompt: str, image_url: str = None, model: str = None) -> dict:
         """
-        Genera un video usando el modelo wan 2.2 i2v 480p ultra fast
+        Genera un video usando diferentes modelos de Wavespeed AI
+
+        Args:
+            prompt: Descripción del video a generar
+            image_url: URL de la imagen de referencia (opcional para text-to-video)
+            model: Modelo a usar ('ultra_fast', 'fast', 'quality', 'text_to_video')
         """
-        endpoint = f"{self.base_url}/api/v3/wavespeed-ai/wan-2.2/i2v-480p-ultra-fast"
+        if model is None or model not in Config.AVAILABLE_MODELS:
+            model = Config.DEFAULT_MODEL
+
+        model_endpoint = Config.AVAILABLE_MODELS[model]
+        endpoint = f"{self.base_url}/api/v3/wavespeed-ai/{model_endpoint}"
+
+        # Configuración específica por modelo
+        model_config = {
+            'ultra_fast': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '480p'},
+            'fast': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '480p'},
+            'quality': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '720p'},
+            'text_to_video': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '480p'}
+        }
+
+        config = model_config.get(model, model_config['ultra_fast'])
 
         payload = {
-            "duration": Config.MAX_VIDEO_DURATION,
-            "image": image_url,  # URL de la imagen enviada por Telegram
-            "last_image": "",
+            "duration": config['duration'],
             "prompt": prompt,
             "negative_prompt": Config.NEGATIVE_PROMPT,
+        }
+
+        # Solo incluir imagen si no es text-to-video o si se proporciona
+        if image_url and model != 'text_to_video':
+            payload["image"] = image_url
+            payload["last_image"] = ""
+        elif model == 'text_to_video' and image_url:
+            # Para text-to-video con imagen de referencia opcional
+            payload["image"] = image_url
+            payload["last_image"] = ""
             "seed": -1
         }
 
@@ -144,6 +171,59 @@ class WavespeedAPI:
         except requests.exceptions.RequestException as e:
             logger.error(f"Error descargando video: {e}")
             raise
+
+    def generate_text_to_video(self, prompt: str, model: str = 'text_to_video') -> dict:
+        """
+        Genera un video solo desde texto (sin imagen de referencia)
+        """
+        return self.generate_video(prompt, image_url=None, model=model)
+
+    def generate_enhanced_video(self, prompt: str, image_url: str, quality: str = 'quality') -> dict:
+        """
+        Genera un video de alta calidad (720p) desde imagen
+        """
+        return self.generate_video(prompt, image_url, model=quality)
+
+    def generate_quick_preview(self, prompt: str, image_url: str = None, model: str = 'ultra_fast') -> dict:
+        """
+        Genera una preview rápida (480p ultra fast)
+        """
+        return self.generate_video(prompt, image_url, model=model)
+
+    def get_available_models(self) -> dict:
+        """
+        Retorna información sobre los modelos disponibles
+        """
+        return {
+            'ultra_fast': {
+                'name': 'Ultra Fast 480p',
+                'description': 'Video rápido en 480p, duración máxima 8s',
+                'duration_max': 8,
+                'resolution': '480p',
+                'speed': 'ultra_fast'
+            },
+            'fast': {
+                'name': 'Fast 480p',
+                'description': 'Video rápido en 480p con mejor calidad',
+                'duration_max': 8,
+                'resolution': '480p',
+                'speed': 'fast'
+            },
+            'quality': {
+                'name': 'Quality 720p',
+                'description': 'Video de alta calidad en 720p',
+                'duration_max': 8,
+                'resolution': '720p',
+                'speed': 'quality'
+            },
+            'text_to_video': {
+                'name': 'Text to Video 480p',
+                'description': 'Genera video solo desde texto (sin imagen)',
+                'duration_max': 8,
+                'resolution': '480p',
+                'speed': 'ultra_fast'
+            }
+        }
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejador del comando /start"""
@@ -230,6 +310,9 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.warning(f"Acceso denegado para usuario {user_id}")
             return
 
+        # Determinar el modelo a usar basado en el contexto del usuario
+        user_model = context.user_data.get('selected_model', Config.DEFAULT_MODEL)
+
         # Logging para debug
         media_type = "unknown"
         if message.photo:
@@ -239,7 +322,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         elif message.sticker:
             media_type = f"sticker (animated: {message.sticker.is_animated})"
 
-        logger.info(f"Imagen recibida - User: {user_id}, Tipo: {media_type}, Forward: {bool(message.forward_origin)}, Caption: {bool(message.caption)}")
+        logger.info(f"Imagen recibida - User: {user_id}, Tipo: {media_type}, Modelo: {user_model}, Forward: {bool(message.forward_origin)}, Caption: {bool(message.caption)}")
 
         # Usar caption si existe, sino usar prompt por defecto
         if message.caption:
@@ -312,8 +395,8 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         # Generar video
         logger.info(f"Generando video con prompt: {prompt[:100]}...")
 
-        # Llamar a la API
-        result = wavespeed.generate_video(prompt, photo_file_url)
+        # Llamar a la API con el modelo seleccionado
+        result = wavespeed.generate_video(prompt, photo_file_url, model=user_model)
 
         if result.get('data') and result['data'].get('id'):
             request_id = result['data']['id']
@@ -472,6 +555,221 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
+async def list_models_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Muestra los modelos disponibles de Wavespeed AI"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(
+            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
+        )
+        return
+
+    wavespeed = WavespeedAPI()
+    models = wavespeed.get_available_models()
+
+    models_text = "🎬 **Modelos de Wavespeed AI Disponibles:**\n\n"
+
+    for model_key, model_info in models.items():
+        models_text += f"**{model_info['name']}** (`{model_key}`)\n"
+        models_text += f"└ {model_info['description']}\n\n"
+
+    models_text += "**📝 Cómo usar diferentes modelos:**\n"
+    models_text += "`/textvideo [prompt]` - Video solo desde texto\n"
+    models_text += "`/quality` - 720p alta calidad (con imagen)\n"
+    models_text += "`/preview` - 480p ultra rápido (con imagen)\n\n"
+    models_text += f"**Modelo por defecto:** `{Config.DEFAULT_MODEL}`"
+
+    await update.message.reply_text(models_text, parse_mode='Markdown')
+
+async def handle_text_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Genera video solo desde texto sin imagen"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(
+            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
+        )
+        return
+
+    # Obtener el prompt del mensaje
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Uso: `/textvideo [tu descripción del video]`\n\n"
+            "💡 **Ejemplo:** `/textvideo Un amanecer espectacular sobre las montañas con nubes moviéndose`",
+            parse_mode='Markdown'
+        )
+        return
+
+    prompt = ' '.join(context.args)
+    logger.info(f"Text-to-video solicitado por {user_id}: {prompt}")
+
+    # Enviar mensaje de procesamiento
+    processing_msg = await update.message.reply_text(
+        "🎬 **Generando video desde texto...**\n\n"
+        f"Prompt: _{prompt[:100]}{'...' if len(prompt) > 100 else ''}_\n\n"
+        "Esto puede tomar unos minutos ⏳",
+        parse_mode='Markdown'
+    )
+
+    try:
+        wavespeed = WavespeedAPI()
+        result = wavespeed.generate_text_to_video(prompt)
+
+        if result.get('data') and result['data'].get('id'):
+            request_id = result['data']['id']
+            logger.info(f"Text-to-video task submitted. Request ID: {request_id}")
+
+            # Esperar y procesar resultado igual que con imágenes
+            await process_video_generation(update, context, processing_msg, wavespeed, request_id, prompt)
+
+        else:
+            await processing_msg.edit_text(
+                "❌ Error al iniciar la generación del video desde texto."
+            )
+
+    except Exception as e:
+        logger.error(f"Error en text-to-video: {e}")
+        await processing_msg.edit_text(
+            "❌ Ocurrió un error generando el video desde texto."
+        )
+
+async def handle_quality_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Activa el modo de video de alta calidad (720p)"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(
+            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
+        )
+        return
+
+    # Activar modo calidad para este usuario
+    context.user_data['selected_model'] = 'quality'
+
+    await update.message.reply_text(
+        "🎯 **Modo Calidad Activado** ✨\n\n"
+        "Ahora envía una imagen con un caption para generar un video en **720p alta calidad**.\n\n"
+        "⚠️ **Nota:** Los videos de alta calidad pueden tomar más tiempo de procesamiento.\n\n"
+        "💡 Para volver al modo normal, usa `/start` o `/preview`",
+        parse_mode='Markdown'
+    )
+
+async def handle_preview_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Activa el modo de preview rápida (480p ultra fast)"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(
+            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
+        )
+        return
+
+    # Activar modo preview para este usuario
+    context.user_data['selected_model'] = 'ultra_fast'
+
+    await update.message.reply_text(
+        "⚡ **Modo Preview Rápida Activado** 🚀\n\n"
+        "Ahora envía una imagen con un caption para generar un video **480p ultra rápido**.\n\n"
+        "💡 **Ideal para:** Probar ideas rápidamente antes de hacer versiones de mayor calidad.\n\n"
+        "🎯 Para videos de alta calidad, usa `/quality`",
+        parse_mode='Markdown'
+    )
+
+async def process_video_generation(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                 processing_msg, wavespeed: WavespeedAPI, request_id: str, prompt: str):
+    """
+    Función común para procesar la generación de video (reutilizable para diferentes modos)
+    """
+    attempt = 0
+    video_sent = False
+
+    while attempt < Config.MAX_POLLING_ATTEMPTS and not video_sent:
+        try:
+            status_result = wavespeed.get_video_status(request_id)
+
+            if status_result.get('data'):
+                task_data = status_result['data']
+                status = task_data.get('status')
+
+                if status == 'completed':
+                    logger.info(f"Task marked as completed. Checking for outputs...")
+
+                    # Verificar múltiples veces si los outputs están disponibles
+                    for output_check in range(5):  # Intentar hasta 5 veces obtener outputs
+                        if task_data.get('outputs') and len(task_data['outputs']) > 0:
+                            video_url = task_data['outputs'][0]
+                            logger.info(f"Video URL obtained: {video_url}")
+
+                            try:
+                                # Descargar el video con validación
+                                video_bytes = wavespeed.download_video(video_url)
+
+                                if len(video_bytes) > 1000:  # Verificar que tenga contenido significativo
+                                    # Generar nombre único para el video y guardarlo en el volumen
+                                    video_filename = generate_serial_filename("output", "mp4")
+                                    video_filepath = save_video_to_volume(video_bytes, video_filename)
+                                    logger.info(f"Video saved to: {video_filepath}")
+
+                                    # Enviar el video desde el archivo guardado
+                                    with open(video_filepath, 'rb') as video_file:
+                                        sent_message = await context.bot.send_video(
+                                            chat_id=update.effective_chat.id,
+                                            video=video_file,
+                                            caption="¡Aquí está tu video generado! 🎥",
+                                            supports_streaming=True
+                                        )
+
+                                    # Confirmar envío exitoso
+                                    await processing_msg.edit_text("✅ ¡Video enviado exitosamente!")
+                                    logger.info(f"Video sent successfully to user {update.effective_chat.id}")
+                                    video_sent = True
+                                    return
+                                else:
+                                    logger.warning(f"Downloaded video too small: {len(video_bytes)} bytes")
+
+                            except Exception as download_error:
+                                logger.error(f"Error downloading video: {download_error}")
+
+                        else:
+                            logger.info(f"Outputs not ready yet (attempt {output_check + 1}/5)")
+                            time.sleep(1)  # Esperar 1 segundo entre checks de outputs
+
+                elif status == 'failed':
+                    error_msg = task_data.get('error', 'Unknown error')
+                    logger.error(f"Task failed: {error_msg}")
+                    await processing_msg.edit_text(
+                        f"❌ La generación del video falló.\n\nError: {error_msg}"
+                    )
+                    return
+
+                else:
+                    logger.info(f"Task still processing. Status: {status}")
+
+            else:
+                logger.warning(f"No data in status response: {status_result}")
+
+        except Exception as polling_error:
+            logger.error(f"Error during polling (attempt {attempt + 1}): {polling_error}")
+
+        # Esperar antes del siguiente check
+        time.sleep(Config.POLLING_INTERVAL)
+        attempt += 1
+
+    # Si llegamos aquí, agotamos los intentos
+    if not video_sent:
+        logger.error(f"Polling timeout reached for request {request_id} after {Config.MAX_POLLING_ATTEMPTS} attempts")
+        await processing_msg.edit_text(
+            f"⏰ El procesamiento agotó el tiempo límite.\n\n"
+            f"🔄 La solicitud se envió correctamente (ID: {request_id[:8]}...)\n"
+            f"📊 Estado final: Se realizaron {Config.MAX_POLLING_ATTEMPTS} verificaciones\n"
+            f"💡 El video puede estar disponible más tarde."
+        )
+
 def create_app():
     """Crear aplicación Flask para webhooks y healthcheck"""
     app = Flask(__name__)
@@ -528,6 +826,10 @@ def main() -> None:
         # Agregar manejadores
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("models", list_models_command))
+        application.add_handler(CommandHandler("textvideo", handle_text_video))
+        application.add_handler(CommandHandler("quality", handle_quality_video))
+        application.add_handler(CommandHandler("preview", handle_preview_video))
         # Múltiples handlers para diferentes tipos de imágenes
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
         application.add_handler(MessageHandler(image_document_filter, handle_document_image))
@@ -607,6 +909,10 @@ def main() -> None:
         # Agregar manejadores
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("models", list_models_command))
+        application.add_handler(CommandHandler("textvideo", handle_text_video))
+        application.add_handler(CommandHandler("quality", handle_quality_video))
+        application.add_handler(CommandHandler("preview", handle_preview_video))
         # Múltiples handlers para diferentes tipos de imágenes
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
         application.add_handler(MessageHandler(image_document_filter, handle_document_image))

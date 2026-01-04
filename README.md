@@ -92,6 +92,19 @@ El bot también procesa fotos que forwardees de otros chats o canales, siempre y
 
 **Nota**: Para forwards de fotos sin imagen adjunta, reenvía la imagen original con el caption incluido.
 
+### 🎯 **Modelos de Wavespeed AI:**
+
+El bot soporta múltiples modelos con diferentes características:
+
+| Modelo | Resolución | Velocidad | Uso recomendado |
+|--------|------------|-----------|-----------------|
+| **Ultra Fast** | 480p | ⚡ Muy rápida | Previews y pruebas rápidas |
+| **Fast** | 480p | 🚀 Rápida | Buen balance calidad/velocidad |
+| **Quality** | 720p | 🎯 Alta calidad | Videos finales profesionales |
+| **Text-to-Video** | 480p | ⚡ Muy rápida | Generación solo desde texto |
+
+**Cambiar modelo:** Usa `/quality` para 720p, `/preview` para ultra rápido, o `/textvideo` para solo texto.
+
 ### 💡 **Captions Opcionales:**
 
 **Opcional:** Puedes agregar un caption personalizado para controlar exactamente qué video se genera. Si no agregas caption, el bot usará un prompt automático cinematográfico.
@@ -175,7 +188,15 @@ El bot incluye configuración personalizable en `config.py`:
 
 ## 🔧 Comandos disponibles
 
+### 🤖 Comandos básicos:
 - `/start` - Inicia el bot y muestra instrucciones
+- `/help` - Muestra ayuda completa
+- `/models` - Lista todos los modelos disponibles de Wavespeed AI
+
+### 🎬 Comandos de generación:
+- `/textvideo [prompt]` - Genera video solo desde texto (sin imagen)
+- `/quality` - Activa modo 720p alta calidad para próximas imágenes
+- `/preview` - Activa modo 480p ultra rápido para próximas imágenes
 - `/help` - Muestra ayuda y comandos disponibles
 
 ## 📁 Estructura del proyecto
