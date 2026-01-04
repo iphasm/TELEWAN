@@ -66,14 +66,27 @@ WEBHOOK_SECRET_TOKEN=tu_token_secreto  # Token opcional para seguridad
 
 ## 📸 Cómo usar el bot
 
-1. **Toma o selecciona una foto** (o forwardea una foto existente)
+### 🎯 **Formatos de Imagen Soportados:**
+
+El bot reconoce **múltiples formatos de imagen** usando verificación avanzada:
+
+- **📷 Fotos directas**: Imágenes tomadas con la cámara o desde la galería
+- **📄 Documentos de imagen**: Archivos JPG, PNG, WebP, GIF enviados como documentos
+- **🎭 Stickers estáticos**: Stickers no animados (PNG/WebP)
+- **🔄 Forwards**: Fotos forwardeadas de otros chats/canales
+
+### 📝 **Pasos para usar:**
+
+1. **Prepara tu imagen** en cualquiera de los formatos soportados
 2. **Agrega un caption descriptivo** (esto será el prompt para generar el video)
-3. **Envía la foto al bot**
+3. **Envía la imagen al bot**
 4. **Espera** a que se procese (puede tomar 1-5 minutos)
 
 ### 🔄 **Soporte para Forwards:**
 
 El bot también procesa fotos que forwardees de otros chats o canales, siempre y cuando tengan un caption descriptivo. Simplemente forwardea la foto con su caption al bot y este la procesará igual que una foto enviada directamente.
+
+**Nota**: Para forwards de fotos sin imagen adjunta, reenvía la imagen original con el caption incluido.
 
 ### 💡 Ejemplos de captions efectivos:
 
@@ -81,6 +94,21 @@ El bot también procesa fotos que forwardees de otros chats o canales, siempre y
 - "Una ciudad futurista con coches voladores y neones brillantes"
 - "Un bosque mágico con hadas danzando entre los árboles"
 - "Olas del océano rompiendo en la playa al atardecer"
+
+### 🔍 **Verificación Múltiple de Imágenes**
+
+El bot utiliza **4 métodos de detección** para asegurar que reconoce todo tipo de imágenes:
+
+1. **📷 Detección de fotos**: Verifica arrays de fotos con múltiples resoluciones
+2. **📄 Análisis de MIME types**: Identifica documentos que son imágenes (JPG, PNG, WebP, GIF)
+3. **🎭 Validación de stickers**: Solo acepta stickers estáticos (no animados)
+4. **🔄 Verificación de forwards**: Detecta intents de forward sin imagen adjunta
+
+**Rechaza automáticamente:**
+- ❌ Documentos no imagen (PDF, DOC, etc.)
+- ❌ Stickers animados/WebP animados
+- ❌ Mensajes sin imagen
+- ❌ Forwards sin imagen adjunta
 
 ### 🚫 Negative Prompt Automática
 
