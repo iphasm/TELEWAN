@@ -125,7 +125,7 @@ El bot incluye **inteligencia artificial avanzada** para mejorar automáticament
 
 #### 🎯 **Cómo funciona:**
 - **Análisis inteligente**: El bot analiza tu imagen y caption para detectar si necesita mejoras
-- **Optimización automática**: Convierte captions simples en prompts técnicos detallados
+- **Optimización contextual**: Usa tanto la imagen como tu texto original para generar prompts más precisos
 - **Mejor calidad**: Prompts optimizados generan videos de mejor calidad automáticamente
 
 #### 📝 **Cuándo se optimiza:**

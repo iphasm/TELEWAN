@@ -30,13 +30,15 @@ def test_prompt_optimizer():
 
     # URL de prueba (imagen de ejemplo)
     test_image_url = "https://d1q70pf5vjeyhc.cloudfront.net/media/4337ee19681340a888c8707fb49e026c/images/1767173780052146671_HRPY53c5.png"
+    test_caption = "una mujer hermosa"
 
     print(f"🖼️  Usando imagen de prueba: {test_image_url}")
+    print(f"📝 Usando caption de prueba: {test_caption}")
 
     try:
         # Paso 1: Enviar imagen al optimizer
         print("\n📤 Enviando imagen al optimizer...")
-        result = wavespeed.optimize_prompt(test_image_url, mode="image", style="default")
+        result = wavespeed.optimize_prompt(test_image_url, text=test_caption, mode="image", style="realistic")
 
         if result.get('data') and result['data'].get('id'):
             request_id = result['data']['id']
@@ -123,3 +125,4 @@ if __name__ == "__main__":
         print("\n🎉 Todas las pruebas pasaron exitosamente!")
     else:
         print("\n💥 Algunas pruebas fallaron.")
+
