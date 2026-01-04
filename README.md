@@ -16,6 +16,7 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
 - 🚫 **Negative prompt automática**: Filtros integrados para evitar elementos no deseados
 - 🔒 **Seguro**: Manejo adecuado de archivos y configuración
 - 🚫 **Prevención de duplicados**: Sistema inteligente que evita procesamiento múltiple del mismo mensaje
+- 🛠️ **Manejo robusto de errores**: Logging detallado y validaciones exhaustivas para diagnóstico rápido
 - 🎯 **Múltiples formatos**: Soporta fotos, documentos de imagen y stickers estáticos
 
 ## 📋 Requisitos
