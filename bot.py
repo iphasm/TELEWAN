@@ -163,40 +163,50 @@ def optimize_user_prompt(image_url: str, original_caption: str = "") -> str:
             attempt = 0
 
             while attempt < max_attempts:
-                status_result = wavespeed.get_prompt_optimizer_status(request_id)
+                try:
+                    status_result = wavespeed.get_prompt_optimizer_status(request_id)
 
-                if status_result.get('data'):
-                    task_data = status_result['data']
-                    status = task_data.get('status')
+                    if status_result.get('data'):
+                        task_data = status_result['data']
+                        status = task_data.get('status')
 
-                    if status == 'completed':
-                        if task_data.get('outputs') and len(task_data['outputs']) > 0:
-                            raw_optimized = task_data['outputs'][0]
-                            logger.info(f"Raw optimizer result: {raw_optimized[:100]}...")
-                            logger.info(f"Original caption: '{original_caption}'")
+                        if status == 'completed':
+                            if task_data.get('outputs') and len(task_data['outputs']) > 0:
+                                raw_optimized = task_data['outputs'][0]
+                                logger.info(f"Raw optimizer result: {raw_optimized[:100]}...")
+                                logger.info(f"Original caption: '{original_caption}'")
 
-                            # Mejorar el prompt para que sea más cinematográfico y adecuado para video
-                            optimized_prompt = enhance_prompt_for_video(raw_optimized, original_caption)
-                            logger.info(f"Enhanced prompt: {optimized_prompt[:100]}...")
-                            logger.info(f"Final prompt length: {len(optimized_prompt)} characters")
-                            return optimized_prompt
-                        else:
-                            logger.warning("Prompt optimization completed but no outputs")
+                                # Mejorar el prompt para que sea más cinematográfico y adecuado para video
+                                optimized_prompt = enhance_prompt_for_video(raw_optimized, original_caption)
+                                logger.info(f"Enhanced prompt: {optimized_prompt[:100]}...")
+                                logger.info(f"Final prompt length: {len(optimized_prompt)} characters")
+                                return optimized_prompt
+                            else:
+                                logger.warning("Prompt optimization completed but no outputs")
+                                break
+
+                        elif status == 'failed':
+                            error_msg = task_data.get('error', 'Unknown error')
+                            logger.error(f"Prompt optimization failed: {error_msg}")
                             break
 
-                    elif status == 'failed':
-                        error_msg = task_data.get('error', 'Unknown error')
-                        logger.error(f"Prompt optimization failed: {error_msg}")
-                        break
+                    attempt += 1
+                    time.sleep(0.5)
 
-                attempt += 1
-                time.sleep(0.5)
+                except Exception as poll_error:
+                    logger.error(f"Error polling optimizer status: {poll_error}")
+                    attempt += 1
+                    time.sleep(1)  # Esperar más tiempo entre reintentos
 
-        logger.warning("Prompt optimization failed or timed out, using original caption")
-        return original_caption or DEFAULT_PROMPT
+            logger.warning("Prompt optimization timed out or failed, using original caption")
+            return original_caption or DEFAULT_PROMPT
+
+        else:
+            logger.error(f"Failed to start prompt optimization. API Response: {result}")
+            return original_caption or DEFAULT_PROMPT
 
     except Exception as e:
-        logger.error(f"Error in prompt optimization: {e}")
+        logger.error(f"Critical error in prompt optimization: {e}")
         return original_caption or DEFAULT_PROMPT
 
 def generate_serial_filename(prefix: str, extension: str) -> str:
@@ -531,40 +541,49 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             prompt_optimized = False  # Flag para indicar si se optimizó el prompt
 
             if auto_optimize_enabled and should_optimize_prompt(original_caption):
-                # Optimizar el prompt usando Molmo2 (necesitamos tener photo_file_url listo)
-                # Primero obtener la URL de la imagen
-                if image_type == "photo":
-                    # Foto directa - obtener la mejor calidad
-                    photo = message.photo[-1]  # La última es la de mejor calidad
-                    photo_file = await context.bot.get_file(photo.file_id)
-                elif image_type == "document":
-                    # Documento de imagen
-                    photo_file = await context.bot.get_file(message.document.file_id)
-                elif image_type == "sticker":
-                    # Sticker estático
-                    photo_file = await context.bot.get_file(message.sticker.file_id)
-                else:
+                try:
+                    # Optimizar el prompt usando Molmo2 (necesitamos tener photo_file_url listo)
+                    # Primero obtener la URL de la imagen
+                    if image_type == "photo":
+                        # Foto directa - obtener la mejor calidad
+                        photo = message.photo[-1]  # La última es la de mejor calidad
+                        photo_file = await context.bot.get_file(photo.file_id)
+                    elif image_type == "document":
+                        # Documento de imagen
+                        photo_file = await context.bot.get_file(message.document.file_id)
+                    elif image_type == "sticker":
+                        # Sticker estático
+                        photo_file = await context.bot.get_file(message.sticker.file_id)
+                    else:
+                        prompt = original_caption
+                        await processing_msg.edit_text("❌ Tipo de imagen no soportado.")
+                        return
+
+                    # Construir URL correcta para la imagen
+                    if photo_file.file_path.startswith('http'):
+                        # file_path ya es una URL completa
+                        photo_file_url = photo_file.file_path
+                    else:
+                        # file_path es relativo, construir URL completa
+                        photo_file_url = f"https://api.telegram.org/file/bot{Config.TELEGRAM_BOT_TOKEN}/{photo_file.file_path}"
+
+                    # Optimizar el prompt usando Molmo2 (en silencio)
+                    optimized_prompt = optimize_user_prompt(photo_file_url, original_caption)
+
+                    if optimized_prompt and optimized_prompt != original_caption:
+                        prompt = optimized_prompt
+                        prompt_optimized = True  # Marcar que se optimizó
+                        logger.info(f"Prompt optimizado silenciosamente: '{original_caption}' → '{optimized_prompt[:100]}...'")
+                    else:
+                        prompt = original_caption
+                        logger.warning(f"Optimización no aplicable o fallida, usando caption original: '{original_caption}'")
+
+                except Exception as optimizer_error:
+                    # Si hay cualquier error en el proceso de optimización, usar el caption original
                     prompt = original_caption
-                    await processing_msg.edit_text("❌ Tipo de imagen no soportado.")
-                    return
-
-                # Construir URL correcta para la imagen
-                if photo_file.file_path.startswith('http'):
-                    # file_path ya es una URL completa
-                    photo_file_url = photo_file.file_path
-                else:
-                    # file_path es relativo, construir URL completa
-                    photo_file_url = f"https://api.telegram.org/file/bot{Config.TELEGRAM_BOT_TOKEN}/{photo_file.file_path}"
-
-                # Optimizar el prompt usando Molmo2 (en silencio)
-                optimized_prompt = optimize_user_prompt(photo_file_url, original_caption)
-
-                if optimized_prompt and optimized_prompt != original_caption:
-                    prompt = optimized_prompt
-                    prompt_optimized = True  # Marcar que se optimizó
-                    logger.info(f"Prompt optimizado silenciosamente: '{original_caption}' → '{optimized_prompt[:100]}...'")
-                else:
-                    prompt = original_caption
+                    logger.error(f"Error crítico en optimización de prompt: {optimizer_error}")
+                    logger.info(f"Continuando con caption original: '{original_caption}'")
+                    # Marcar que hubo un problema pero no interrumpir el flujo
                     logger.info("Optimización falló, usando caption original")
             else:
                 prompt = original_caption
