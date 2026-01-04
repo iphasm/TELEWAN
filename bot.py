@@ -362,10 +362,12 @@ class WavespeedAPI:
         payload = {
             "enable_sync_mode": False,
             "image": image_url,
-            "text": prompt,  # El caption original del usuario
-            "mode": "video",
-            "style": "realistic"
+            "text": text,  # El caption original del usuario
+            "mode": mode,
+            "style": style
         }
+        
+        logger.info(f"Calling prompt optimizer with: image={image_url[:50]}..., text='{text}', mode={mode}, style={style}")
 
         try:
             response = requests.post(endpoint, json=payload, headers=self.headers)
