@@ -125,6 +125,7 @@ class WavespeedAPI:
             "duration": config['duration'],
             "prompt": prompt,
             "negative_prompt": Config.NEGATIVE_PROMPT,
+            "seed": -1
         }
 
         # Solo incluir imagen si no es text-to-video o si se proporciona
@@ -135,8 +136,6 @@ class WavespeedAPI:
             # Para text-to-video con imagen de referencia opcional
             payload["image"] = image_url
             payload["last_image"] = ""
-            "seed": -1
-        }
 
         try:
             response = requests.post(endpoint, json=payload, headers=self.headers)
