@@ -576,7 +576,8 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         if not message.caption:
             original_caption = ""  # Caption vacío para casos sin caption
             prompt = DEFAULT_PROMPT
-            logger.info("Usando prompt por defecto (sin caption proporcionado)")
+            logger.info(f"🔄 Procesando imagen SIN caption - usando DEFAULT_PROMPT (longitud: {len(DEFAULT_PROMPT)} caracteres)")
+            logger.info(f"   Prompt preview: {DEFAULT_PROMPT[:100]}...")
         else:
             original_caption = message.caption
 
@@ -650,7 +651,8 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.info(f"🧹 Flag limpiado por validación imagen fallida: chat {chat_id}")
             return
 
-        logger.info(f"Imagen detectada - Tipo: {image_type}, User: {user_id}")
+        logger.info(f"✅ Imagen detectada correctamente - Tipo: {image_type}, User: {user_id}")
+        logger.info(f"   Prompt a usar: '{prompt[:100]}...' (longitud: {len(prompt)})")
 
         # Información adicional para forwards
         if message.forward_origin:
@@ -659,8 +661,24 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         # Obtener la imagen según el tipo detectado
         if image_type == "photo":
             # Foto directa - obtener la mejor calidad
+            if not message.photo or len(message.photo) == 0:
+                await message.reply_text("❌ Error: No se pudo acceder a la foto.")
+                context.user_data[processing_key] = False
+                logger.error(f"🧹 Flag limpiado - message.photo vacío o None")
+                return
+
+            logger.info(f"📷 Procesando foto con {len(message.photo)} tamaños disponibles")
             photo = message.photo[-1]  # La última es la de mejor calidad
-            photo_file = await context.bot.get_file(photo.file_id)
+            logger.info(f"📷 Usando tamaño de foto: {photo.width}x{photo.height}, file_id: {photo.file_id[:20]}...")
+
+            try:
+                photo_file = await context.bot.get_file(photo.file_id)
+                logger.info(f"📁 File obtenido correctamente: {photo_file.file_path[:50]}...")
+            except Exception as file_error:
+                await message.reply_text("❌ Error al obtener el archivo de la foto.")
+                context.user_data[processing_key] = False
+                logger.error(f"Error obteniendo file: {file_error}")
+                return
         elif image_type == "document":
             # Documento de imagen
             photo_file = await context.bot.get_file(message.document.file_id)
@@ -682,19 +700,38 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             photo_file_url = f"https://api.telegram.org/file/bot{Config.TELEGRAM_BOT_TOKEN}/{photo_file.file_path}"
 
         # Descargar la foto para guardarla localmente
-        photo_bytes = await photo_file.download_as_bytearray()
+        try:
+            logger.info(f"📥 Descargando imagen ({photo_file.file_size} bytes)...")
+            photo_bytes = await photo_file.download_as_bytearray()
+            logger.info(f"✅ Imagen descargada correctamente: {len(photo_bytes)} bytes")
+        except Exception as download_error:
+            await message.reply_text("❌ Error al descargar la imagen.")
+            context.user_data[processing_key] = False
+            logger.error(f"Error descargando imagen: {download_error}")
+            return
 
         # Generar nombre único para la imagen y guardarla en el volumen
-        image_filename = generate_serial_filename("input", "jpg")
-        image_filepath = save_image_to_volume(photo_bytes, image_filename)
+        try:
+            image_filename = generate_serial_filename("input", "jpg")
+            image_filepath = save_image_to_volume(photo_bytes, image_filename)
+            logger.info(f"💾 Imagen guardada localmente: {image_filepath}")
+        except Exception as save_error:
+            await message.reply_text("❌ Error al guardar la imagen.")
+            context.user_data[processing_key] = False
+            logger.error(f"Error guardando imagen: {save_error}")
+            return
 
         # Procesar la imagen (opcional, por si necesitamos redimensionar)
         image = Image.open(io.BytesIO(photo_bytes))
+
+        logger.info(f"🚀 Iniciando envío a Wavespeed - Modelo: {user_model}, Prompt length: {len(prompt)}")
 
         # Enviar mensaje de procesamiento
         processing_msg = await update.message.reply_text(
             "🎬 Procesando tu imagen... Esto puede tomar unos minutos."
         )
+
+        logger.info(f"📤 Mensaje de procesamiento enviado correctamente")
 
         # Inicializar API de Wavespeed
         wavespeed = WavespeedAPI()
