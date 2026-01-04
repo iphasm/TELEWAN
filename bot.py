@@ -536,11 +536,12 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         # Verificar si ya hay un procesamiento activo para este chat
         processing_key = f"processing_{chat_id}"
         if context.user_data.get(processing_key, False):
-            logger.info(f"Procesamiento ya activo para chat {chat_id}, ignorando mensaje duplicado")
+            logger.warning(f"🚫 Procesamiento ya activo para chat {chat_id} (mensaje {message_id}), ignorando posible duplicado")
             return
 
         # Marcar que hay un procesamiento activo
         context.user_data[processing_key] = True
+        logger.info(f"🔄 Iniciando procesamiento para chat {chat_id}, mensaje {message_id}, tipo: {media_type}")
 
         # Verificar autenticación si está configurada
         if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
@@ -550,6 +551,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.warning(f"Acceso denegado para usuario {user_id}")
             # Limpiar el flag de procesamiento
             context.user_data[processing_key] = False
+            logger.info(f"🧹 Flag limpiado por autenticación denegada: chat {chat_id}")
             return
 
         # Determinar el modelo a usar basado en el contexto del usuario
@@ -568,6 +570,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         # Procesar el prompt con optimización automática
         if not message.caption:
+            original_caption = ""  # Caption vacío para casos sin caption
             prompt = DEFAULT_PROMPT
             logger.info("Usando prompt por defecto (sin caption proporcionado)")
         else:
@@ -595,6 +598,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                         prompt = original_caption
                         await processing_msg.edit_text("❌ Tipo de imagen no soportado.")
                         context.user_data[processing_key] = False
+                        logger.info(f"🧹 Flag limpiado por tipo imagen no soportado: chat {chat_id}")
                         return
 
                     # Construir URL correcta para la imagen
@@ -633,6 +637,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         if not is_image:
             await message.reply_text(error_msg)
             context.user_data[processing_key] = False
+            logger.info(f"🧹 Flag limpiado por validación imagen fallida: chat {chat_id}")
             return
 
         logger.info(f"Imagen detectada - Tipo: {image_type}, User: {user_id}")
@@ -655,6 +660,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             await message.reply_text("❌ Tipo de imagen no soportado.")
             context.user_data[processing_key] = False
+            logger.info(f"🧹 Flag limpiado por tipo imagen no soportado (2): chat {chat_id}")
             return
 
         # Construir URL correcta para la imagen (para WaveSpeed API)
@@ -741,6 +747,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                             logger.info(f"Video sent successfully to user {update.effective_chat.id}")
                                             video_sent = True
                                             context.user_data[processing_key] = False
+                                            logger.info(f"🧹 Flag limpiado por envío exitoso de video: chat {chat_id}")
                                             return
                                         else:
                                             logger.warning(f"Downloaded video too small: {len(video_bytes)} bytes")
@@ -756,6 +763,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                                 f"💡 Contacta al administrador si el problema persiste."
                                             )
                                             context.user_data[processing_key] = False
+                                            logger.info(f"🧹 Flag limpiado por error en descarga: chat {chat_id}")
                                             return
 
                                 else:
@@ -769,6 +777,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                 f"❌ Lo siento, hubo un error al generar el video: {error_msg}"
                             )
                             context.user_data[processing_key] = False
+                            logger.info(f"🧹 Flag limpiado por error en generación: chat {chat_id}")
                             return
                         elif status in ['processing', 'pending', 'running']:
                             logger.info(f"Task still processing. Status: {status} (attempt {attempt + 1}/{Config.MAX_POLLING_ATTEMPTS})")
@@ -809,6 +818,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
     finally:
         # Limpiar el flag de procesamiento
         context.user_data[processing_key] = False
+        logger.info(f"✅ Procesamiento finalizado y flag limpiado para chat {chat_id}")
 
 # Funciones wrapper para diferentes tipos de mensajes con imagen
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
