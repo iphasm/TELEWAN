@@ -280,8 +280,8 @@ class WavespeedAPI:
         payload = {
             "enable_sync_mode": False,
             "image": image_url,
-            "mode": mode,
-            "style": style
+            "mode": "image",
+            "style": "realistic"
         }
 
         try:
