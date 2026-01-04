@@ -730,13 +730,19 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                             video_filepath = save_video_to_volume(video_bytes, video_filename)
                                             logger.info(f"Video saved to: {video_filepath}")
 
+                                            # Preparar el caption del video con el prompt utilizado
+                                            video_caption = f"🎬 **Prompt utilizado:**\n{prompt}"
+                                            if prompt_optimized:
+                                                video_caption += "\n\n🎨 *Prompt optimizado automáticamente*"
+
                                             # Enviar el video desde el archivo guardado
                                             with open(video_filepath, 'rb') as video_file:
                                                 sent_message = await context.bot.send_video(
                                                     chat_id=update.effective_chat.id,
                                                     video=video_file,
-                                                    caption="¡Aquí está tu video generado! 🎥",
-                                                    supports_streaming=True
+                                                    caption=video_caption,
+                                                    supports_streaming=True,
+                                                    parse_mode='Markdown'
                                                 )
 
                                             # Confirmar envío exitoso
@@ -1070,13 +1076,17 @@ async def process_video_generation(update: Update, context: ContextTypes.DEFAULT
                                     video_filepath = save_video_to_volume(video_bytes, video_filename)
                                     logger.info(f"Video saved to: {video_filepath}")
 
+                                    # Preparar el caption del video con el prompt utilizado
+                                    video_caption = f"🎬 **Prompt utilizado:**\n{prompt}"
+
                                     # Enviar el video desde el archivo guardado
                                     with open(video_filepath, 'rb') as video_file:
                                         sent_message = await context.bot.send_video(
                                             chat_id=update.effective_chat.id,
                                             video=video_file,
-                                            caption="¡Aquí está tu video generado! 🎥",
-                                            supports_streaming=True
+                                            caption=video_caption,
+                                            supports_streaming=True,
+                                            parse_mode='Markdown'
                                         )
 
                                     # Confirmar envío exitoso
