@@ -500,6 +500,17 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         message = update.message
         user_id = message.from_user.id
+        chat_id = message.chat.id
+        message_id = message.message_id
+
+        # Verificar si ya hay un procesamiento activo para este chat
+        processing_key = f"processing_{chat_id}"
+        if context.user_data.get(processing_key, False):
+            logger.info(f"Procesamiento ya activo para chat {chat_id}, ignorando mensaje duplicado")
+            return
+
+        # Marcar que hay un procesamiento activo
+        context.user_data[processing_key] = True
 
         # Verificar autenticación si está configurada
         if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
@@ -507,6 +518,8 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
             )
             logger.warning(f"Acceso denegado para usuario {user_id}")
+            # Limpiar el flag de procesamiento
+            context.user_data[processing_key] = False
             return
 
         # Determinar el modelo a usar basado en el contexto del usuario
@@ -526,12 +539,6 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         # Procesar el prompt con optimización automática
         if not message.caption:
             prompt = DEFAULT_PROMPT
-            # Informar al usuario que se está usando el prompt por defecto
-            await message.reply_text(
-                "🎬 **Procesando con prompt automático**\n\n"
-                "No proporcionaste un caption, así que usaré un prompt cinematográfico predefinido.\n\n"
-                "💡 **Tip:** Para personalizar el video, agrega un caption descriptivo a tu imagen."
-            )
             logger.info("Usando prompt por defecto (sin caption proporcionado)")
         else:
             original_caption = message.caption
@@ -557,6 +564,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                     else:
                         prompt = original_caption
                         await processing_msg.edit_text("❌ Tipo de imagen no soportado.")
+                        context.user_data[processing_key] = False
                         return
 
                     # Construir URL correcta para la imagen
@@ -594,6 +602,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         if not is_image:
             await message.reply_text(error_msg)
+            context.user_data[processing_key] = False
             return
 
         logger.info(f"Imagen detectada - Tipo: {image_type}, User: {user_id}")
@@ -615,6 +624,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             photo_file = await context.bot.get_file(message.sticker.file_id)
         else:
             await message.reply_text("❌ Tipo de imagen no soportado.")
+            context.user_data[processing_key] = False
             return
 
         # Construir URL correcta para la imagen (para WaveSpeed API)
@@ -700,6 +710,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                             await processing_msg.edit_text(success_msg)
                                             logger.info(f"Video sent successfully to user {update.effective_chat.id}")
                                             video_sent = True
+                                            context.user_data[processing_key] = False
                                             return
                                         else:
                                             logger.warning(f"Downloaded video too small: {len(video_bytes)} bytes")
@@ -714,6 +725,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                                 f"🔗 URL del video: {video_url}\n"
                                                 f"💡 Contacta al administrador si el problema persiste."
                                             )
+                                            context.user_data[processing_key] = False
                                             return
 
                                 else:
@@ -726,6 +738,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                             await processing_msg.edit_text(
                                 f"❌ Lo siento, hubo un error al generar el video: {error_msg}"
                             )
+                            context.user_data[processing_key] = False
                             return
                         elif status in ['processing', 'pending', 'running']:
                             logger.info(f"Task still processing. Status: {status} (attempt {attempt + 1}/{Config.MAX_POLLING_ATTEMPTS})")
@@ -763,6 +776,9 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(
             "❌ Ocurrió un error inesperado. Por favor, inténtalo de nuevo."
         )
+    finally:
+        # Limpiar el flag de procesamiento
+        context.user_data[processing_key] = False
 
 # Funciones wrapper para diferentes tipos de mensajes con imagen
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
