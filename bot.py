@@ -148,13 +148,8 @@ def optimize_user_prompt(image_url: str, original_caption: str = "") -> str:
     try:
         wavespeed = WavespeedAPI()
 
-        # Crear prompt más específico para el optimizer
-        if original_caption and len(original_caption.strip()) > 0:
-            # Si hay caption del usuario, usarlo como base pero agregar contexto
-            optimizer_text = f"Create a detailed, cinematic video description based on: {original_caption}. Make it vivid, atmospheric, and optimized for AI video generation."
-        else:
-            # Si no hay caption, usar un prompt genérico pero más específico
-            optimizer_text = "Create a highly detailed, cinematic video description with dramatic lighting, emotional atmosphere, and vivid visual elements optimized for AI video generation."
+        # Usar el caption original del usuario tal cual
+        optimizer_text = original_caption
 
         # Enviar imagen al optimizer con texto mejorado
         result = wavespeed.optimize_prompt(image_url, text=optimizer_text, mode="image", style="cinematic")
