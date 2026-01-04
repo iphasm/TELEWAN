@@ -86,7 +86,7 @@ def optimize_user_prompt(image_url: str, original_caption: str = "") -> str:
         wavespeed = WavespeedAPI()
 
         # Enviar imagen al optimizer
-        result = wavespeed.optimize_prompt(image_url, text=original_caption, mode="image", style="realistic")
+        result = wavespeed.optimize_prompt(image_url, text=original_caption, mode="video", style="realistic")
 
         if result.get('data') and result['data'].get('id'):
             request_id = result['data']['id']
