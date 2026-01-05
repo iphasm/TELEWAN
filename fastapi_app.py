@@ -106,8 +106,12 @@ async def lifespan(app: FastAPI):
             telegram_app.add_handler(MessageHandler(image_document_filter, handle_document_image))
             telegram_app.add_handler(MessageHandler(static_sticker_filter, handle_sticker_image))
 
+            # ¡CRÍTICO! Inicializar la aplicación de Telegram para webhook
+            await telegram_app.initialize()
+            logger.info("✅ Telegram Application inicializado (initialize() llamado)")
+
             app_state["telegram_app"] = telegram_app
-            logger.info("✅ Aplicación de Telegram inicializada correctamente")
+            logger.info("✅ Aplicación de Telegram registrada en app_state")
 
             # Configurar webhook si está habilitado
             if Config.WEBHOOK_URL:
@@ -240,19 +244,29 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
 
         # Obtener datos del webhook
         update_data = await request.json()
-        logger.info(f"📨 Webhook recibido: {update_data.get('update_id', 'unknown')}")
+        update_id = update_data.get('update_id', 'unknown')
+
+        # Log detallado del update
+        message = update_data.get('message', {})
+        text = message.get('text', '[no text]') if message else '[no message]'
+        from_user = message.get('from', {}) if message else {}
+        user_id = from_user.get('id', 'unknown')
+
+        logger.info(f"📨 Webhook recibido: update_id={update_id}, text='{text[:30]}...', user={user_id}")
 
         # Incrementar contador
         app_state["processed_updates"] += 1
 
         # Procesar actualización en background
-        if app_state["telegram_app"]:
+        telegram_app = app_state.get("telegram_app")
+        if telegram_app:
+            logger.info(f"✅ Enviando update {update_id} a procesamiento")
             background_tasks.add_task(process_telegram_update, update_data)
         else:
-            logger.error("❌ Aplicación de Telegram no inicializada")
+            logger.error("❌ Aplicación de Telegram no inicializada - no se puede procesar")
             raise HTTPException(status_code=503, detail="Telegram app not ready")
 
-        return {"status": "accepted", "update_id": update_data.get("update_id")}
+        return {"status": "accepted", "update_id": update_id}
 
     except HTTPException:
         raise
@@ -267,16 +281,33 @@ async def process_telegram_update(update_data: Dict[str, Any]):
     try:
         from telegram import Update
 
+        update_id = update_data.get('update_id')
+        logger.info(f"🔄 Procesando update {update_id}...")
+
+        # Verificar que la aplicación está lista
+        telegram_app = app_state.get("telegram_app")
+        if not telegram_app:
+            logger.error(f"❌ Telegram app no disponible para update {update_id}")
+            return
+
         # Crear objeto Update desde los datos
-        update = Update.de_json(update_data, app_state["telegram_app"].bot)
+        update = Update.de_json(update_data, telegram_app.bot)
 
-        # Procesar la actualización
-        await app_state["telegram_app"].process_update(update)
+        # Verificar si es un mensaje con texto
+        if update.message and update.message.text:
+            text = update.message.text
+            user_id = update.message.from_user.id if update.message.from_user else 'unknown'
+            logger.info(f"📨 Mensaje: '{text[:50]}' de user_id={user_id}")
 
-        logger.info(f"✅ Update {update_data.get('update_id')} procesado correctamente")
+        # Procesar la actualización con el bot
+        await telegram_app.process_update(update)
+
+        logger.info(f"✅ Update {update_id} procesado correctamente")
 
     except Exception as e:
         logger.error(f"❌ Error procesando update {update_data.get('update_id')}: {e}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
 
 @app.get("/stats", tags=["Monitoring"])
 async def get_stats():
