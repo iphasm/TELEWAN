@@ -54,7 +54,7 @@ class Config:
         "🎬 **Modelos de video:**\n"
         "/models - Ver todos los modelos disponibles\n"
         "/preview - Modo preview rápida (480p ultra fast)\n"
-        "/quality - Videos de alta calidad (720p)\n\n"
+        "/quality - Videos de alta calidad (720p) - más tiempo pero mejor calidad\n\n"
         "🎨 **Optimización:**\n"
         "/optimize - Activar/desactivar optimización IA automática\n\n"
         "🔄 **Recuperación:**\n"

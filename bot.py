@@ -161,13 +161,24 @@ class WavespeedAPI:
             logger.error(f"Error obteniendo estado del video: {e}")
             raise
 
-    def download_video(self, video_url: str, timeout: int = 30) -> bytes:
+    def download_video(self, video_url: str, timeout: int = 30, model: str = 'ultra_fast') -> bytes:
         """
         Descarga el video generado con mejor manejo de errores
+        Ajusta timeout según el modelo para videos de calidad
         """
+        # Ajustar timeout según el modelo
+        if model == 'quality':
+            # Videos 720p necesitan más tiempo (hasta 3 minutos)
+            timeout = max(timeout, 180)  # 3 minutos mínimo
+            logger.info(f"🎯 Video de CALIDAD detectado - Timeout extendido a {timeout} segundos")
+        elif model == 'fast':
+            timeout = max(timeout, 90)  # 1.5 minutos para fast
+        else:
+            timeout = max(timeout, 60)  # 1 minuto para ultra_fast
+
         try:
             logger.info(f"📥 Iniciando descarga de video desde: {video_url[:50]}...")
-            logger.info(f"   Timeout configurado: {timeout} segundos")
+            logger.info(f"   Modelo: {model} | Timeout configurado: {timeout} segundos")
 
             # Hacer la petición con timeout y headers
             headers = {
@@ -196,6 +207,9 @@ class WavespeedAPI:
             # Descargar el contenido
             content = response.content
             logger.info(f"✅ Video descargado exitosamente: {len(content)} bytes")
+
+            # Validaciones exhaustivas del archivo descargado
+            self._validate_video_integrity(content, model)
 
             return content
 
@@ -242,6 +256,47 @@ class WavespeedAPI:
         base_message += "💡 Contacta al administrador si el problema persiste."
 
         return base_message
+
+    def _validate_video_integrity(self, video_bytes: bytes, model: str) -> None:
+        """
+        Valida que el video descargado esté completo y sea válido
+        Realiza validaciones más estrictas para videos de calidad
+        """
+        file_size = len(video_bytes)
+
+        # Validación básica de tamaño mínimo
+        if file_size < 1000:
+            raise ValueError(f"Archivo descargado demasiado pequeño: {file_size} bytes")
+
+        # Validaciones específicas por modelo
+        if model == 'quality':
+            # Videos 720p deben ser más grandes (mínimo ~500KB para videos cortos)
+            min_size_quality = 500 * 1024  # 500KB
+            if file_size < min_size_quality:
+                raise ValueError(f"Video de calidad demasiado pequeño: {file_size:,} bytes (mínimo: {min_size_quality:,} bytes)")
+            logger.info(f"✅ Video de CALIDAD validado: {file_size:,} bytes")
+
+        elif model == 'fast':
+            # Videos fast deben ser razonables (~200KB mínimo)
+            min_size_fast = 200 * 1024  # 200KB
+            if file_size < min_size_fast:
+                raise ValueError(f"Video fast demasiado pequeño: {file_size:,} bytes (mínimo: {min_size_fast:,} bytes)")
+
+        else:
+            # Videos ultra_fast pueden ser más pequeños (~50KB mínimo)
+            min_size_ultra = 50 * 1024  # 50KB
+            if file_size < min_size_ultra:
+                raise ValueError(f"Video ultra_fast demasiado pequeño: {file_size:,} bytes (mínimo: {min_size_ultra:,} bytes)")
+
+        # Validación de firma MP4 básica (primeros bytes)
+        if len(video_bytes) >= 12:
+            # MP4 files typically start with 'ftyp' box after 'moov' or similar
+            # Check for common video file signatures
+            header = video_bytes[:12]
+            if not any(sig in header for sig in [b'ftyp', b'moov', b'mdat', b'free']):
+                logger.warning(f"⚠️  Firma de video no reconocida en header: {header[:8].hex()}")
+
+        logger.info(f"✅ Video validado: {file_size:,} bytes, modelo: {model}")
 
     def generate_text_to_video(self, prompt: str, model: str = 'text_to_video') -> dict:
         """
@@ -711,8 +766,8 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
                                         logger.info(f"🎬 Iniciando descarga de video (intento {output_check + 1}/5)")
 
-                                        # Descargar el video con validación
-                                        video_bytes = wavespeed.download_video(video_url)
+                                        # Descargar el video con validación (timeout adaptado al modelo)
+                                        video_bytes = wavespeed.download_video(video_url, model=user_model)
 
                                         if len(video_bytes) > 1000:  # Verificar que tenga contenido significativo
                                             # Generar nombre único para el video y guardarlo en el volumen
@@ -725,15 +780,41 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                             if prompt_optimized:
                                                 video_caption += "\n\n🎨 *Prompt optimizado automáticamente*"
 
-                                            # Enviar el video desde el archivo guardado
-                                            with open(video_filepath, 'rb') as video_file:
-                                                sent_message = await context.bot.send_video(
-                                                    chat_id=update.effective_chat.id,
-                                                    video=video_file,
-                                                    caption=video_caption,
-                                                    supports_streaming=True,
-                                                    parse_mode='Markdown'
-                                                )
+                                            # Enviar el video desde el archivo guardado con reintentos
+                                            send_attempts = 3  # Máximo 3 intentos para enviar a Telegram
+                                            video_sent_successfully = False
+
+                                            for send_attempt in range(send_attempts):
+                                                try:
+                                                    logger.info(f"📤 Enviando video a Telegram (intento {send_attempt + 1}/{send_attempts})")
+
+                                                    with open(video_filepath, 'rb') as video_file:
+                                                        sent_message = await context.bot.send_video(
+                                                            chat_id=update.effective_chat.id,
+                                                            video=video_file,
+                                                            caption=video_caption,
+                                                            supports_streaming=True,
+                                                            parse_mode='Markdown'
+                                                        )
+
+                                                    video_sent_successfully = True
+                                                    logger.info(f"✅ Video enviado exitosamente a Telegram en intento {send_attempt + 1}")
+                                                    break  # Salir del loop si se envió correctamente
+
+                                                except Exception as send_error:
+                                                    logger.error(f"❌ Error enviando video a Telegram (intento {send_attempt + 1}): {send_error}")
+
+                                                    if send_attempt < send_attempts - 1:  # No es el último intento
+                                                        wait_time = 2 * (send_attempt + 1)  # Espera progresiva: 2s, 4s
+                                                        logger.info(f"⏳ Reintentando envío en {wait_time} segundos...")
+                                                        await asyncio.sleep(wait_time)
+                                                    else:
+                                                        # Último intento falló, relanzar el error
+                                                        logger.error("💥 Todos los intentos de envío fallaron")
+                                                        raise send_error
+
+                                            if not video_sent_successfully:
+                                                raise Exception("No se pudo enviar el video a Telegram después de múltiples intentos")
 
                                             # Almacenar información del último video procesado para recuperación
                                             context.user_data['last_video'] = {
@@ -933,7 +1014,7 @@ async def handle_text_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             logger.info(f"Text-to-video task submitted. Request ID: {request_id}")
 
             # Esperar y procesar resultado igual que con imágenes
-            await process_video_generation(update, context, processing_msg, wavespeed, request_id, prompt)
+            await process_video_generation(update, context, processing_msg, wavespeed, request_id, prompt, model='text_to_video')
 
         else:
             await processing_msg.edit_text(
@@ -962,6 +1043,11 @@ async def handle_quality_video(update: Update, context: ContextTypes.DEFAULT_TYP
         "🎯 **Modo Calidad Activado** ✨\n\n"
         "Ahora envía una imagen con un caption para generar un video en **720p alta calidad**.\n\n"
         "⚠️ **Nota:** Los videos de alta calidad pueden tomar más tiempo de procesamiento.\n\n"
+        "✅ **Mejoras implementadas:**\n"
+        "• Timeout extendido (3 minutos para descarga)\n"
+        "• Reintentos automáticos en caso de error\n"
+        "• Validación exhaustiva del archivo\n"
+        "• Sistema de recuperación con `/lastvideo`\n\n"
         "💡 Para volver al modo normal, usa `/start` o `/preview`",
         parse_mode='Markdown'
     )
@@ -1107,7 +1193,7 @@ async def handle_lastvideo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
 
 async def process_video_generation(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                                 processing_msg, wavespeed: WavespeedAPI, request_id: str, prompt: str):
+                                 processing_msg, wavespeed: WavespeedAPI, request_id: str, prompt: str, model: str = 'ultra_fast'):
     """
     Función común para procesar la generación de video (reutilizable para diferentes modos)
     """
@@ -1141,8 +1227,8 @@ async def process_video_generation(update: Update, context: ContextTypes.DEFAULT
 
                                     logger.info(f"🎬 Iniciando descarga de video (intento {download_attempt + 1}/5)")
 
-                                    # Descargar el video con validación
-                                    video_bytes = wavespeed.download_video(video_url)
+                                    # Descargar el video con validación (timeout adaptado al modelo)
+                                    video_bytes = wavespeed.download_video(video_url, model=model)
 
                                     if len(video_bytes) > 1000:  # Verificar que tenga contenido significativo
                                         # Generar nombre único para el video y guardarlo en el volumen
@@ -1153,15 +1239,41 @@ async def process_video_generation(update: Update, context: ContextTypes.DEFAULT
                                         # Preparar el caption del video con el prompt utilizado
                                         video_caption = f"🎬 **Prompt utilizado:**\n{prompt}"
 
-                                        # Enviar el video desde el archivo guardado
-                                        with open(video_filepath, 'rb') as video_file:
-                                            sent_message = await context.bot.send_video(
-                                                chat_id=update.effective_chat.id,
-                                                video=video_file,
-                                                caption=video_caption,
-                                                supports_streaming=True,
-                                                parse_mode='Markdown'
-                                            )
+                                        # Enviar el video desde el archivo guardado con reintentos
+                                        send_attempts = 3  # Máximo 3 intentos para enviar a Telegram
+                                        video_sent_successfully = False
+
+                                        for send_attempt in range(send_attempts):
+                                            try:
+                                                logger.info(f"📤 Enviando video a Telegram (intento {send_attempt + 1}/{send_attempts})")
+
+                                                with open(video_filepath, 'rb') as video_file:
+                                                    sent_message = await context.bot.send_video(
+                                                        chat_id=update.effective_chat.id,
+                                                        video=video_file,
+                                                        caption=video_caption,
+                                                        supports_streaming=True,
+                                                        parse_mode='Markdown'
+                                                    )
+
+                                                video_sent_successfully = True
+                                                logger.info(f"✅ Video enviado exitosamente a Telegram en intento {send_attempt + 1}")
+                                                break  # Salir del loop si se envió correctamente
+
+                                            except Exception as send_error:
+                                                logger.error(f"❌ Error enviando video a Telegram (intento {send_attempt + 1}): {send_error}")
+
+                                                if send_attempt < send_attempts - 1:  # No es el último intento
+                                                    wait_time = 2 * (send_attempt + 1)  # Espera progresiva: 2s, 4s
+                                                    logger.info(f"⏳ Reintentando envío en {wait_time} segundos...")
+                                                    await asyncio.sleep(wait_time)
+                                                else:
+                                                    # Último intento falló, relanzar el error
+                                                    logger.error("💥 Todos los intentos de envío fallaron")
+                                                    raise send_error
+
+                                        if not video_sent_successfully:
+                                            raise Exception("No se pudo enviar el video a Telegram después de múltiples intentos")
 
                                         # Confirmar envío exitoso
                                         success_msg = "✅ ¡Video enviado exitosamente!"
