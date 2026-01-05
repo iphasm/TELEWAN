@@ -277,9 +277,20 @@ event_bus = EventBus()
 
 async def init_event_bus():
     """Initialize the global event bus"""
-    await event_bus.connect()
+    try:
+        await event_bus.connect()
+        logger.info("✅ Event Bus fully operational with Redis")
+    except Exception as e:
+        logger.warning(f"⚠️  Event Bus Redis unavailable: {e}")
+        logger.info("ℹ️  Continuing without Redis - limited event functionality")
+        # No raise aquí - permitir que la app continue
 
 
 async def shutdown_event_bus():
     """Shutdown the global event bus"""
-    await event_bus.disconnect()
+    try:
+        await event_bus.disconnect()
+        logger.info("✅ Event Bus shutdown complete")
+    except Exception as e:
+        logger.warning(f"⚠️  Event Bus shutdown issue: {e}")
+        # No raise aquí - permitir shutdown graceful

@@ -174,12 +174,21 @@ event_handlers = EventHandlers()
 
 async def init_event_handlers():
     """Initialize event handlers"""
-    await event_handlers.register_all_handlers()
+    try:
+        await event_handlers.register_all_handlers()
+        logger.info("✅ Event handlers initialized")
+    except Exception as e:
+        logger.warning(f"⚠️  Event handlers initialization failed: {e}")
+        logger.info("ℹ️  Continuing without event handlers")
 
 
 async def shutdown_event_handlers():
     """Shutdown event handlers"""
-    await event_handlers.unregister_all_handlers()
+    try:
+        await event_handlers.unregister_all_handlers()
+        logger.info("✅ Event handlers shutdown complete")
+    except Exception as e:
+        logger.warning(f"⚠️  Event handlers shutdown issue: {e}")
 
 
 # Convenience functions for publishing common events

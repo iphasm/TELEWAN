@@ -74,7 +74,8 @@ async def lifespan(app: FastAPI):
             await init_event_bus()
             logger.info("✅ Event Bus inicializado correctamente")
         except Exception as e:
-            logger.warning(f"⚠️  Event Bus no disponible: {e} - continuando sin eventos")
+            logger.warning(f"⚠️  Event Bus no disponible (Redis): {e} - usando modo sin eventos")
+            logger.info("ℹ️  El bot funcionará normalmente sin sistema de eventos avanzado")
 
         # 2. Inicializar Event Handlers (opcional)
         try:
@@ -85,7 +86,7 @@ async def lifespan(app: FastAPI):
 
         # 3. Inicializar aplicación de Telegram (requiere token)
         try:
-            from telegram.ext import Application
+            from telegram.ext import Application, CommandHandler, MessageHandler, filters
             telegram_app = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
 
             # Agregar manejadores de comandos
@@ -342,15 +343,7 @@ async def debug_info():
         }
     }
 
-@app.on_event("startup")
-async def startup_event():
-    """Evento de startup adicional"""
-    logger.info("🎯 FastAPI startup event - aplicación lista")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Evento de shutdown"""
-    logger.info("🛑 FastAPI shutdown event - limpiando recursos")
+# Removidos @app.on_event deprecados - usando lifespan en su lugar
 
 def create_app() -> FastAPI:
     """Factory function para crear la aplicación FastAPI"""
