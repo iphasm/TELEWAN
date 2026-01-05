@@ -1,2 +1,2 @@
-worker: python bot.py
+web: python fastapi_app.py
 

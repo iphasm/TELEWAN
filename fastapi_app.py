@@ -22,6 +22,29 @@ from events import event_bus, init_event_bus, shutdown_event_bus, init_event_han
 # Configurar logging
 logger = logging.getLogger(__name__)
 
+async def setup_webhook(telegram_app):
+    """Configurar webhook en Telegram"""
+    try:
+        # Asegurar que la URL tenga https://
+        webhook_base_url = Config.WEBHOOK_URL
+        if not webhook_base_url.startswith('http'):
+            webhook_base_url = f"https://{webhook_base_url}"
+
+        webhook_url = f"{webhook_base_url}{Config.WEBHOOK_PATH}"
+        logger.info(f"Webhook URL completa: {webhook_url}")
+
+        # Configurar webhook en Telegram
+        await telegram_app.bot.set_webhook(
+            url=webhook_url,
+            secret_token=os.getenv('WEBHOOK_SECRET_TOKEN')
+        )
+
+        logger.info("✅ Webhook configurado exitosamente en Telegram")
+
+    except Exception as e:
+        logger.error(f"❌ Error configurando webhook: {e}")
+        raise
+
 # Estado global de la aplicación
 app_state = {
     "telegram_app": None,
@@ -68,6 +91,10 @@ async def lifespan(app: FastAPI):
 
         app_state["telegram_app"] = telegram_app
         logger.info("✅ Aplicación de Telegram inicializada correctamente")
+
+        # Configurar webhook si está habilitado
+        if Config.WEBHOOK_URL:
+            await setup_webhook(telegram_app)
 
         logger.info("🎯 Sistema Event-Driven completamente operativo")
 
