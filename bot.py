@@ -590,8 +590,24 @@ class VideoDownloader:
                 '--print', '%(title)s',
                 '--print', '%(duration)s',
                 '--print', '%(ext)s',
-                url
             ]
+
+            # Configuración específica por plataforma
+            if platform == 'TikTok':
+                # TikTok requiere configuración especial para evitar bloqueos
+                cmd.extend([
+                    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    '--add-header', 'Referer: https://www.tiktok.com/',
+                    '--extractor-args', 'tiktok:api_hostname=api22-normal-c-useast2a.tiktokv.com;app_info=7355728852457084934',
+                ])
+            elif platform in ['Facebook', 'Instagram']:
+                # Redes sociales requieren user-agent moderno
+                cmd.extend([
+                    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                ])
+
+            # Agregar la URL al final
+            cmd.append(url)
 
             logger.info(f"Ejecutando comando: {' '.join(cmd)}")
 
