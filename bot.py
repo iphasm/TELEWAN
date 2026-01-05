@@ -13,6 +13,15 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Message
 
+# Import opcional para curl_cffi
+try:
+    from curl_cffi import requests as curl_requests
+    CURL_CFFI_AVAILABLE = True
+    logger.info("✅ curl_cffi disponible para descargas avanzadas")
+except ImportError:
+    CURL_CFFI_AVAILABLE = False
+    logger.warning("⚠️ curl_cffi no disponible - usando solo yt-dlp")
+
 # Filtros personalizados para imágenes
 class ImageDocumentFilter:
     """Filtro para documentos que son imágenes"""
@@ -551,6 +560,155 @@ class VideoDownloader:
         platform = self.detect_platform(url)
         return platform is not None
 
+    def download_video_curl_cffi(self, url: str, platform: str) -> dict:
+        """
+        Descarga un video usando curl_cffi con impersonación de navegador
+        Alternativa avanzada para plataformas problemáticas como TikTok
+        """
+        if not CURL_CFFI_AVAILABLE:
+            return {
+                'success': False,
+                'error': 'curl_cffi no disponible'
+            }
+
+        try:
+            logger.info(f"🔧 Intentando descarga con curl_cffi para {platform}")
+
+            # Configuración específica por plataforma
+            impersonate_target = "chrome124"  # Chrome moderno por defecto
+
+            if platform == 'TikTok':
+                # TikTok funciona mejor con Safari iOS
+                impersonate_target = "safari18_ios"
+            elif platform in ['Facebook', 'Instagram']:
+                # Facebook/Instagram funcionan bien con Chrome
+                impersonate_target = "chrome124"
+
+            # Headers adicionales para mejor impersonación
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            }
+
+            # Primera petición para obtener información del video
+            logger.info(f"🌐 Consultando URL con impersonación: {impersonate_target}")
+            response = curl_requests.get(
+                url,
+                impersonate=impersonate_target,
+                headers=headers,
+                timeout=30,
+                allow_redirects=True
+            )
+
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f'Error HTTP {response.status_code}: {response.text[:100]}...'
+                }
+
+            # Buscar URLs de video en la respuesta (JSON o HTML)
+            content = response.text
+
+            # Para TikTok, buscar el JSON con la información del video
+            if platform == 'TikTok':
+                # Buscar patrones comunes de URLs de video en TikTok
+                video_patterns = [
+                    r'"playAddr":"([^"]+)"',
+                    r'"downloadAddr":"([^"]+)"',
+                    r'playAddr["\s]*:[\s]*"([^"]+)"',
+                    r'https://v\d+\.ttcdn\.cn[^"\s]+',
+                    r'https://v\d+\.bytecdn\.cn[^"\s]+'
+                ]
+
+                video_url = None
+                for pattern in video_patterns:
+                    match = re.search(pattern, content)
+                    if match:
+                        video_url = match.group(1).replace('\\u0026', '&').replace('\\', '')
+                        if video_url.startswith('http'):
+                            logger.info(f"🎥 URL de video encontrada: {video_url[:100]}...")
+                            break
+
+                if not video_url:
+                    return {
+                        'success': False,
+                        'error': 'No se pudo encontrar la URL del video en la respuesta de TikTok'
+                    }
+
+                # Descargar el video real
+                logger.info("📥 Descargando video desde URL encontrada")
+                video_response = curl_requests.get(
+                    video_url,
+                    impersonate=impersonate_target,
+                    headers=headers,
+                    timeout=60
+                )
+
+                if video_response.status_code != 200:
+                    return {
+                        'success': False,
+                        'error': f'Error descargando video: HTTP {video_response.status_code}'
+                    }
+
+                # Extraer metadatos del JSON de TikTok
+                title = "TikTok Video"
+                duration = 0
+
+                # Buscar título en el JSON
+                title_patterns = [
+                    r'"desc":"([^"]+)"',
+                    r'"text":"([^"]+)"',
+                    r'title["\s]*:[\s]*"([^"]+)"'
+                ]
+
+                for pattern in title_patterns:
+                    match = re.search(pattern, content)
+                    if match:
+                        title = match.group(1).replace('\\n', ' ').strip()
+                        break
+
+                # Guardar el video
+                video_bytes = video_response.content
+                file_size = len(video_bytes)
+
+                # Validar tamaño mínimo
+                if file_size < 10000:  # 10KB mínimo
+                    return {
+                        'success': False,
+                        'error': f'Video descargado demasiado pequeño: {file_size} bytes'
+                    }
+
+                video_filename = generate_serial_filename("tiktok_curl", "mp4")
+                video_filepath = save_video_to_volume(video_bytes, video_filename)
+
+                return {
+                    'success': True,
+                    'filepath': video_filepath,
+                    'title': title,
+                    'duration': duration,
+                    'platform': platform,
+                    'file_size': file_size,
+                    'method': 'curl_cffi'
+                }
+
+            else:
+                # Para otras plataformas, usar yt-dlp como fallback
+                return {
+                    'success': False,
+                    'error': f'curl_cffi no implementado para {platform}, usar yt-dlp'
+                }
+
+        except Exception as e:
+            logger.error(f"Error en curl_cffi para {platform}: {e}")
+            return {
+                'success': False,
+                'error': f'Error con curl_cffi: {str(e)}'
+            }
+
     def download_video(self, url: str) -> dict:
         """
         Descarga un video de redes sociales usando yt-dlp
@@ -627,6 +785,17 @@ class VideoDownloader:
 
             if result.returncode != 0:
                 logger.error(f"Error en yt-dlp: {result.stderr}")
+
+                # Fallback a curl_cffi para TikTok si yt-dlp falla
+                if platform == 'TikTok' and CURL_CFFI_AVAILABLE and 'impersonat' in result.stderr.lower():
+                    logger.info("🎯 Error de impersonación en TikTok - intentando curl_cffi")
+                    curl_result = self.download_video_curl_cffi(url, platform)
+                    if curl_result['success']:
+                        logger.info("✅ curl_cffi funcionó como fallback para TikTok")
+                        return curl_result
+                    else:
+                        logger.warning(f"⚠️ curl_cffi también falló: {curl_result.get('error', 'Unknown error')}")
+
                 return {
                     'success': False,
                     'error': f'Error descargando video: {result.stderr[:200]}...'
@@ -1745,10 +1914,17 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         result = video_downloader.download_video(url)
 
         if not result['success']:
+            error_msg = result['error']
+
+            # Mensaje más específico para TikTok con información sobre fallback
+            if platform == 'TikTok' and 'impersonat' in error_msg.lower():
+                error_msg = "Error de acceso a TikTok. Se intentó con métodos avanzados pero falló."
+
             await processing_msg.edit_text(
                 f"❌ **Error descargando video**\n\n"
-                f"**Detalles:** {result['error']}\n\n"
-                f"💡 Verifica que la URL sea correcta y el video esté disponible.",
+                f"**Detalles:** {error_msg}\n\n"
+                f"💡 Verifica que la URL sea correcta y el video esté disponible.\n"
+                f"🔧 Para TikTok, se usan técnicas avanzadas de acceso.",
                 parse_mode='Markdown'
             )
             return
