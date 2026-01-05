@@ -596,14 +596,20 @@ class VideoDownloader:
             if platform == 'TikTok':
                 # TikTok requiere configuración especial para evitar bloqueos
                 cmd.extend([
-                    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
                     '--add-header', 'Referer: https://www.tiktok.com/',
-                    '--extractor-args', 'tiktok:api_hostname=api22-normal-c-useast2a.tiktokv.com;app_info=7355728852457084934',
+                    # Intentar sin extractor-args primero para evitar problemas de impersonación
                 ])
             elif platform in ['Facebook', 'Instagram']:
                 # Redes sociales requieren user-agent moderno
                 cmd.extend([
-                    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                    '--add-header', 'Accept-Language: en-US,en;q=0.9',
+                ])
+            else:
+                # Configuración general para otras plataformas
+                cmd.extend([
+                    '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
                 ])
 
             # Agregar la URL al final
@@ -673,8 +679,41 @@ class VideoDownloader:
                 'error': 'Timeout: La descarga tomó demasiado tiempo (máx 2 minutos)'
             }
 
+        except subprocess.TimeoutExpired:
+            logger.error("Timeout descargando video de red social")
+            return {
+                'success': False,
+                'error': 'Timeout: La descarga tomó demasiado tiempo (máx 2 minutos). El video puede ser muy largo o el servidor está lento.'
+            }
+
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr.strip() if e.stderr else str(e)
+
+            # Mensajes de error más específicos
+            if 'Video unavailable' in error_msg or 'not available' in error_msg:
+                error = 'Video no disponible: El video puede haber sido eliminado o ser privado.'
+            elif 'Unsupported URL' in error_msg:
+                error = 'URL no soportada: Verifica que la URL sea correcta.'
+            elif 'Private video' in error_msg:
+                error = 'Video privado: No se puede acceder a videos privados.'
+            elif 'Age-restricted' in error_msg:
+                error = 'Video con restricción de edad: No se puede descargar contenido con restricción de edad.'
+            elif 'Geo-blocked' in error_msg:
+                error = 'Video geo-bloqueado: El contenido no está disponible en tu región.'
+            elif 'impersonat' in error_msg.lower():
+                error = 'Error de acceso: Problema técnico con la plataforma. Inténtalo más tarde.'
+            else:
+                error = f'Error de descarga: {error_msg[:150]}...'
+
+            logger.error(f"Error en yt-dlp: {error_msg}")
+            return {
+                'success': False,
+                'error': error,
+                'platform': platform
+            }
+
         except Exception as e:
-            logger.error(f"Error descargando video: {e}")
+            logger.error(f"Error crítico descargando video: {e}")
             return {
                 'success': False,
                 'error': f'Error interno: {str(e)}'
