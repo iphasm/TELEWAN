@@ -57,46 +57,71 @@ async def lifespan(app: FastAPI):
     """Manejador de ciclo de vida de la aplicación"""
     logger.info("🚀 Iniciando aplicación FastAPI para TELEWAN Bot")
 
+    # Verificar credenciales críticas antes de inicializar
+    if not Config.TELEGRAM_BOT_TOKEN:
+        logger.error("❌ TELEGRAM_BOT_TOKEN no configurado - aplicación no puede inicializarse")
+        app_state["error"] = "TELEGRAM_BOT_TOKEN missing"
+        yield
+        return
+
+    if not Config.WAVESPEED_API_KEY:
+        logger.warning("⚠️  WAVESPEED_API_KEY no configurado - funcionalidades limitadas")
+
     # Startup: Inicializar componentes del sistema event-driven
     try:
-        # 1. Inicializar Event Bus
-        await init_event_bus()
-        logger.info("✅ Event Bus inicializado correctamente")
+        # 1. Inicializar Event Bus (siempre, no requiere credenciales)
+        try:
+            await init_event_bus()
+            logger.info("✅ Event Bus inicializado correctamente")
+        except Exception as e:
+            logger.warning(f"⚠️  Event Bus no disponible: {e} - continuando sin eventos")
 
-        # 2. Inicializar Event Handlers
-        await init_event_handlers()
-        logger.info("✅ Event Handlers registrados correctamente")
+        # 2. Inicializar Event Handlers (opcional)
+        try:
+            await init_event_handlers()
+            logger.info("✅ Event Handlers registrados correctamente")
+        except Exception as e:
+            logger.warning(f"⚠️  Event Handlers no disponibles: {e} - continuando sin handlers")
 
-        # 3. Inicializar aplicación de Telegram
-        from telegram.ext import Application
-        telegram_app = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
+        # 3. Inicializar aplicación de Telegram (requiere token)
+        try:
+            from telegram.ext import Application
+            telegram_app = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
 
-        # Agregar manejadores de comandos
-        telegram_app.add_handler(CommandHandler("start", start))
-        telegram_app.add_handler(CommandHandler("help", help_command))
-        telegram_app.add_handler(CommandHandler("models", list_models_command))
-        telegram_app.add_handler(CommandHandler("textvideo", handle_text_video))
-        telegram_app.add_handler(CommandHandler("quality", handle_quality_video))
-        telegram_app.add_handler(CommandHandler("preview", handle_preview_video))
-        telegram_app.add_handler(CommandHandler("optimize", handle_optimize))
+            # Agregar manejadores de comandos
+            telegram_app.add_handler(CommandHandler("start", start))
+            telegram_app.add_handler(CommandHandler("help", help_command))
+            telegram_app.add_handler(CommandHandler("models", list_models_command))
+            telegram_app.add_handler(CommandHandler("textvideo", handle_text_video))
+            telegram_app.add_handler(CommandHandler("quality", handle_quality_video))
+            telegram_app.add_handler(CommandHandler("preview", handle_preview_video))
+            telegram_app.add_handler(CommandHandler("optimize", handle_optimize))
 
-        # Agregar manejadores de mensajes (photos, documents, stickers)
-        from telegram.ext import MessageHandler, filters
-        from bot import handle_photo, handle_document_image, handle_sticker_image
-        from bot import image_document_filter, static_sticker_filter
+            # Agregar manejadores de mensajes (photos, documents, stickers)
+            from telegram.ext import MessageHandler, filters
+            from bot import handle_photo, handle_document_image, handle_sticker_image
+            from bot import image_document_filter, static_sticker_filter
 
-        telegram_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-        telegram_app.add_handler(MessageHandler(image_document_filter, handle_document_image))
-        telegram_app.add_handler(MessageHandler(static_sticker_filter, handle_sticker_image))
+            telegram_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+            telegram_app.add_handler(MessageHandler(image_document_filter, handle_document_image))
+            telegram_app.add_handler(MessageHandler(static_sticker_filter, handle_sticker_image))
 
-        app_state["telegram_app"] = telegram_app
-        logger.info("✅ Aplicación de Telegram inicializada correctamente")
+            app_state["telegram_app"] = telegram_app
+            logger.info("✅ Aplicación de Telegram inicializada correctamente")
 
-        # Configurar webhook si está habilitado
-        if Config.WEBHOOK_URL:
-            await setup_webhook(telegram_app)
+            # Configurar webhook si está habilitado
+            if Config.WEBHOOK_URL:
+                try:
+                    await setup_webhook(telegram_app)
+                except Exception as webhook_error:
+                    logger.warning(f"⚠️  Webhook no configurado: {webhook_error} - usando polling")
 
-        logger.info("🎯 Sistema Event-Driven completamente operativo")
+            logger.info("🎯 Sistema Event-Driven operativo")
+
+        except Exception as telegram_error:
+            logger.error(f"❌ Error inicializando Telegram: {telegram_error}")
+            app_state["telegram_error"] = str(telegram_error)
+            logger.warning("⚠️  Continuando sin Telegram - solo endpoints básicos disponibles")
 
     except Exception as e:
         logger.error(f"❌ Error inicializando componentes: {e}")
@@ -134,35 +159,69 @@ app = FastAPI(
 
 @app.get("/", tags=["Health"])
 async def root():
-    """Endpoint de healthcheck básico"""
-    return {
-        "status": "healthy",
-        "service": "TELEWAN Bot API",
-        "version": "2.0.0",
-        "timestamp": datetime.now().isoformat(),
-        "uptime_seconds": (datetime.now() - app_state["start_time"]).total_seconds(),
-        "processed_updates": app_state["processed_updates"]
-    }
+    """Endpoint de healthcheck básico - siempre responde"""
+    try:
+        # Respuesta básica que siempre funciona
+        return {
+            "status": "ok",
+            "service": "TELEWAN Bot API",
+            "version": "2.0.0",
+            "timestamp": datetime.now().isoformat(),
+            "uptime_seconds": (datetime.now() - app_state["start_time"]).total_seconds(),
+            "processed_updates": app_state.get("processed_updates", 0)
+        }
+    except Exception as e:
+        # Fallback si algo falla
+        return {
+            "status": "error",
+            "service": "TELEWAN Bot API",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
 
 @app.get("/health", tags=["Health"])
 async def health_check():
     """Healthcheck detallado"""
-    telegram_status = "operational" if app_state["telegram_app"] else "initializing"
+    components = {
+        "fastapi_server": "operational",
+        "uptime_seconds": (datetime.now() - app_state["start_time"]).total_seconds()
+    }
 
-    return {
-        "status": "healthy",
+    # Verificar estado de componentes
+    if app_state.get("telegram_app"):
+        components["telegram_bot"] = "operational"
+    elif app_state.get("telegram_error"):
+        components["telegram_bot"] = f"error: {app_state['telegram_error']}"
+    else:
+        components["telegram_bot"] = "not_initialized"
+
+    # Verificar estado general
+    has_critical_errors = (
+        app_state.get("telegram_error") or
+        not Config.TELEGRAM_BOT_TOKEN
+    )
+
+    status = "unhealthy" if has_critical_errors else "healthy"
+
+    response = {
+        "status": status,
         "service": "TELEWAN Bot",
+        "version": "2.0.0",
         "timestamp": datetime.now().isoformat(),
-        "components": {
-            "telegram_bot": telegram_status,
-            "fastapi_server": "operational",
-            "uptime_seconds": (datetime.now() - app_state["start_time"]).total_seconds()
-        },
+        "components": components,
         "metrics": {
             "processed_updates": app_state["processed_updates"],
             "start_time": app_state["start_time"].isoformat()
         }
     }
+
+    # Agregar información de errores si existen
+    if app_state.get("error"):
+        response["error"] = app_state["error"]
+    if app_state.get("telegram_error"):
+        response["telegram_error"] = app_state["telegram_error"]
+
+    return response
 
 @app.post("/webhook", tags=["Telegram"])
 async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
@@ -223,10 +282,33 @@ async def process_telegram_update(update_data: Dict[str, Any]):
 async def get_stats():
     """Estadísticas de la aplicación"""
     return {
-        "processed_updates": app_state["processed_updates"],
+        "processed_updates": app_state.get("processed_updates", 0),
         "uptime": (datetime.now() - app_state["start_time"]).total_seconds(),
-        "telegram_bot_ready": app_state["telegram_app"] is not None,
+        "telegram_bot_ready": app_state.get("telegram_app") is not None,
         "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/debug", tags=["Debug"])
+async def debug_info():
+    """Información de debug para troubleshooting"""
+    return {
+        "timestamp": datetime.now().isoformat(),
+        "environment": {
+            "telegram_token": bool(Config.TELEGRAM_BOT_TOKEN),
+            "wavespeed_key": bool(Config.WAVESPEED_API_KEY),
+            "webhook_url": Config.WEBHOOK_URL,
+            "webhook_enabled": Config.USE_WEBHOOK
+        },
+        "app_state": {
+            "telegram_app": app_state.get("telegram_app") is not None,
+            "processed_updates": app_state.get("processed_updates", 0),
+            "has_error": bool(app_state.get("error")),
+            "has_telegram_error": bool(app_state.get("telegram_error"))
+        },
+        "errors": {
+            "config_error": app_state.get("error"),
+            "telegram_error": app_state.get("telegram_error")
+        }
     }
 
 @app.on_event("startup")
@@ -245,21 +327,30 @@ def create_app() -> FastAPI:
 
 def run_server():
     """Ejecutar servidor con configuración optimizada para producción"""
-    port = Config.WEBHOOK_PORT
-    host = "0.0.0.0"
+    try:
+        port = int(os.getenv('PORT', Config.WEBHOOK_PORT))
+        host = "0.0.0.0"
 
-    logger.info(f"🚀 Iniciando servidor FastAPI en {host}:{port}")
+        logger.info(f"🚀 Iniciando servidor FastAPI en {host}:{port}")
+        logger.info(f"📊 Puerto configurado: {port} (usando PORT env si existe)")
 
-    uvicorn.run(
-        "fastapi_app:app",
-        host=host,
-        port=port,
-        reload=False,  # Desactivar reload en producción
-        log_level="info",
-        access_log=True,
-        server_header=False,  # No exponer información del servidor
-        date_header=False
-    )
+        uvicorn.run(
+            "fastapi_app:create_app",
+            factory=True,  # Usar factory function
+            host=host,
+            port=port,
+            reload=False,  # Desactivar reload en producción
+            log_level="info",
+            access_log=True,
+            server_header=False,  # No exponer información del servidor
+            date_header=False,
+            # Configuración para Railway
+            workers=1,  # Single worker para evitar conflictos
+            loop="asyncio"
+        )
+    except Exception as e:
+        logger.error(f"💥 Error fatal iniciando servidor: {e}")
+        raise
 
 if __name__ == "__main__":
     run_server()
