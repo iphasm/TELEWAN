@@ -413,26 +413,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # Verificar autenticación si está configurada
     if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
-        await update.message.reply_text(
-            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
-        )
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
         logger.warning(f"Acceso denegado para usuario {user_id} en /start")
         return
 
-    welcome_message = """
-¡Hola! Soy un bot que transforma fotos en videos usando IA.
-
-📸 **Cómo usar:**
-1. Envía una foto con un caption descriptivo
-2. El bot usará el texto del caption como prompt para generar un video
-3. Espera a que se procese (puede tomar unos minutos)
-
-**Ejemplo:**
-Envía una foto de un paisaje con el caption: "Un amanecer sobre las montañas con nubes moviéndose suavemente"
-
-¡Prueba enviando una foto ahora!
-    """
-    await update.message.reply_text(welcome_message, parse_mode='Markdown')
+    await update.message.reply_text(Config.WELCOME_MESSAGE, parse_mode='Markdown')
 
 def is_image_message(message) -> tuple[bool, str, str]:
     """
@@ -501,9 +486,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         # Verificar autenticación si está configurada
         if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
-            await message.reply_text(
-                "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
-            )
+            await message.reply_text(Config.ACCESS_DENIED_MESSAGE)
             logger.warning(f"Acceso denegado para usuario {user_id}")
             # Limpiar el flag de procesamiento
             context.user_data[processing_key] = False
@@ -530,14 +513,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             # Verificar si hay DEFAULT_PROMPT configurado
             if not DEFAULT_PROMPT or DEFAULT_PROMPT.strip() == "":
                 logger.warning("❌ Imagen enviada sin caption y DEFAULT_PROMPT no configurado")
-                await update.message.reply_text(
-                    "❌ **Error**: Enviaste una imagen sin descripción (caption).\n\n"
-                    "Por favor, incluye una descripción detallada de lo que quieres generar, por ejemplo:\n"
-                    "• 'Una mujer caminando por la ciudad con estilo fashion'\n"
-                    "• 'Retrato de una persona sonriendo'\n\n"
-                    "O configura la variable de entorno `DEFAULT_PROMPT` en Railway para usar un prompt automático.",
-                    parse_mode='Markdown'
-                )
+                await update.message.reply_text(Config.NO_CAPTION_MESSAGE, parse_mode='Markdown')
                 return
 
             original_caption = ""  # Caption vacío para casos sin caption
@@ -689,9 +665,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info(f"🚀 Iniciando envío a Wavespeed - Modelo: {user_model}, Prompt length: {len(prompt)}")
 
         # Enviar mensaje de procesamiento
-        processing_msg = await update.message.reply_text(
-            "🎬 Procesando tu imagen... Esto puede tomar unos minutos."
-        )
+        processing_msg = await update.message.reply_text(Config.PROCESSING_MESSAGE)
 
         logger.info(f"📤 Mensaje de procesamiento enviado correctamente")
 
@@ -877,38 +851,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     # Verificar autenticación si está configurada
     if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
-        await update.message.reply_text(
-            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
-        )
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
         logger.warning(f"Acceso denegado para usuario {user_id} en /help")
         return
 
-    help_text = """
-🤖 **Comandos disponibles:**
-
-/start - Inicia el bot y muestra instrucciones
-/help - Muestra esta ayuda
-
-🎬 **Modelos de video:**
-/models - Ver todos los modelos disponibles
-/preview - Modo preview rápida (480p ultra fast)
-/quality - Videos de alta calidad (720p)
-/textvideo - Generar video solo desde texto
-/optimize - Activar/desactivar optimización automática de prompts
-
-📸 **Cómo generar videos:**
-- Envía una foto con un caption descriptivo
-- El bot optimizará automáticamente el prompt con IA para mejores resultados
-- Soporta fotos, documentos de imagen y stickers estáticos
-
-💡 **Tips para mejores resultados:**
-- Sé específico en tu descripción
-- La IA optimizará automáticamente captions cortos o genéricos
-- Incluye detalles sobre movimiento y estilo
-- Prueba con diferentes tipos de escenas
-
-¡Disfruta creando videos con IA! 🎬
-    """
+    await update.message.reply_text(Config.HELP_MESSAGE, parse_mode='Markdown')
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def list_models_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -917,9 +864,7 @@ async def list_models_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Verificar autenticación si está configurada
     if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
-        await update.message.reply_text(
-            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
-        )
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
         return
 
     wavespeed = WavespeedAPI()
@@ -945,9 +890,7 @@ async def handle_text_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     # Verificar autenticación si está configurada
     if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
-        await update.message.reply_text(
-            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
-        )
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
         return
 
     # Obtener el prompt del mensaje
@@ -998,9 +941,7 @@ async def handle_quality_video(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # Verificar autenticación si está configurada
     if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
-        await update.message.reply_text(
-            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
-        )
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
         return
 
     # Activar modo calidad para este usuario
@@ -1020,9 +961,7 @@ async def handle_preview_video(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # Verificar autenticación si está configurada
     if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
-        await update.message.reply_text(
-            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
-        )
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
         return
 
     # Activar modo preview para este usuario
@@ -1042,9 +981,7 @@ async def handle_optimize(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     # Verificar autenticación si está configurada
     if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
-        await update.message.reply_text(
-            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
-        )
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
         return
 
     # Toggle optimización automática (por defecto desactivado)
