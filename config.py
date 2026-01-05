@@ -57,6 +57,8 @@ class Config:
         "/quality - Videos de alta calidad (720p) - más tiempo pero mejor calidad\n\n"
         "🎨 **Optimización:**\n"
         "/optimize - Activar/desactivar optimización IA automática\n\n"
+        "💰 **Cuenta:**\n"
+        "/balance - Consultar balance y créditos disponibles\n\n"
         "🔄 **Recuperación:**\n"
         "/lastvideo - Recuperar el último video procesado\n\n"
         "📝 **Cómo usar:**\n"

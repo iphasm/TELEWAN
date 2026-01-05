@@ -19,7 +19,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from config import Config
 from bot import (
     start, help_command, list_models_command, handle_text_video,
-    handle_quality_video, handle_preview_video, handle_optimize, handle_lastvideo,
+    handle_quality_video, handle_preview_video, handle_optimize, handle_lastvideo, handle_balance,
     handle_photo, handle_document_image, handle_sticker_image,
     image_document_filter, static_sticker_filter
 )
@@ -98,6 +98,7 @@ async def lifespan(app: FastAPI):
             telegram_app.add_handler(CommandHandler("preview", handle_preview_video))
             telegram_app.add_handler(CommandHandler("optimize", handle_optimize))
             telegram_app.add_handler(CommandHandler("lastvideo", handle_lastvideo))
+            telegram_app.add_handler(CommandHandler("balance", handle_balance))
 
             # Agregar manejadores de mensajes (photos, documents, stickers)
             telegram_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))

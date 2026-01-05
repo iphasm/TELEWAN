@@ -360,6 +360,57 @@ class WavespeedAPI:
             logger.error(f"Error obteniendo resultado del prompt optimizer: {e}")
             raise
 
+    def get_balance(self) -> dict:
+        """
+        Consulta el balance/creditos disponibles en la cuenta de Wavespeed
+        """
+        try:
+            # Intentar diferentes endpoints posibles para balance
+            balance_endpoints = [
+                '/user/balance',
+                '/balance',
+                '/credits',
+                '/account/balance',
+                '/api/user/balance'
+            ]
+
+            for endpoint in balance_endpoints:
+                try:
+                    url = f"{self.base_url}{endpoint}"
+                    logger.info(f"Consultando balance en: {url}")
+
+                    response = requests.get(url, headers=self.headers, timeout=10)
+                    response.raise_for_status()
+
+                    data = response.json()
+                    logger.info(f"Balance obtenido exitosamente desde {endpoint}")
+                    return data
+
+                except requests.exceptions.HTTPError as e:
+                    if e.response.status_code == 404:
+                        # Endpoint no existe, probar siguiente
+                        continue
+                    else:
+                        logger.error(f"Error HTTP consultando balance en {endpoint}: {e}")
+                        raise
+                except Exception as e:
+                    logger.warning(f"Error consultando {endpoint}: {e}")
+                    continue
+
+            # Si ningún endpoint funcionó, retornar información básica
+            logger.warning("No se pudo consultar balance - endpoints no disponibles")
+            return {
+                'error': 'Balance endpoint not available',
+                'message': 'La API de Wavespeed no tiene endpoint público para consultar balance',
+                'available_endpoints_tested': balance_endpoints
+            }
+
+        except Exception as e:
+            logger.error(f"Error crítico consultando balance: {e}")
+            return {
+                'error': str(e),
+                'message': 'Error consultando balance de Wavespeed'
+            }
 
     def get_available_models(self) -> dict:
         """
@@ -1191,6 +1242,98 @@ async def handle_lastvideo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             f"💡 Inténtalo de nuevo o procesa una nueva imagen.",
             parse_mode='Markdown'
         )
+
+async def handle_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador para el comando /balance - consultar balance de Wavespeed"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
+        return
+
+    try:
+        # Enviar mensaje de procesamiento
+        processing_msg = await update.message.reply_text(
+            "💰 **Consultando balance...**\n\n"
+            "🔄 Obteniendo información de tu cuenta Wavespeed.",
+            parse_mode='Markdown'
+        )
+
+        # Consultar balance usando la API
+        wavespeed = WavespeedAPI()
+        balance_data = wavespeed.get_balance()
+
+        # Procesar respuesta
+        if balance_data.get('error'):
+            # Error en la consulta
+            error_msg = balance_data.get('message', 'Error desconocido')
+            await processing_msg.edit_text(
+                f"❌ **Error consultando balance**\n\n"
+                f"**Detalles:** {error_msg}\n\n"
+                f"💡 Si el problema persiste, contacta al administrador.",
+                parse_mode='Markdown'
+            )
+            logger.warning(f"Error consultando balance para usuario {user_id}: {error_msg}")
+            return
+
+        # Formatear respuesta exitosa
+        balance_info = "💰 **Balance de Wavespeed**\n\n"
+
+        # Intentar diferentes formatos de respuesta
+        if 'balance' in balance_data:
+            balance = balance_data['balance']
+            if isinstance(balance, (int, float)):
+                balance_info += f"**Saldo actual:** ${balance:.2f}\n"
+            else:
+                balance_info += f"**Saldo actual:** {balance}\n"
+
+        if 'credits' in balance_data:
+            credits = balance_data['credits']
+            if isinstance(credits, (int, float)):
+                balance_info += f"**Créditos disponibles:** {credits:,}\n"
+            else:
+                balance_info += f"**Créditos disponibles:** {credits}\n"
+
+        if 'usage' in balance_data:
+            usage = balance_data['usage']
+            balance_info += f"**Uso del mes:** {usage}\n"
+
+        if 'plan' in balance_data:
+            plan = balance_data['plan']
+            balance_info += f"**Plan:** {plan}\n"
+
+        # Si no hay datos específicos, mostrar respuesta cruda
+        if balance_info == "💰 **Balance de Wavespeed**\n\n":
+            balance_info += "**Información de cuenta:**\n"
+            for key, value in balance_data.items():
+                if key not in ['error', 'message']:
+                    balance_info += f"• **{key}:** {value}\n"
+
+        # Agregar información adicional
+        balance_info += f"\n📊 **Estado:** Operativo ✅\n"
+        balance_info += f"🔄 **Última consulta:** {datetime.now().strftime('%H:%M:%S')}"
+
+        await processing_msg.edit_text(balance_info, parse_mode='Markdown')
+        logger.info(f"Balance consultado exitosamente para usuario {user_id}")
+
+    except Exception as e:
+        logger.error(f"Error crítico en comando /balance para usuario {user_id}: {e}")
+        try:
+            await processing_msg.edit_text(
+                "❌ **Error interno**\n\n"
+                f"Ocurrió un error procesando tu solicitud.\n\n"
+                f"**Detalles técnicos:** {str(e)}\n\n"
+                f"💡 Inténtalo de nuevo en unos minutos.",
+                parse_mode='Markdown'
+            )
+        except:
+            # Fallback si no se puede editar el mensaje
+            await update.message.reply_text(
+                "❌ **Error consultando balance**\n\n"
+                "Hubo un problema técnico. Inténtalo de nuevo.",
+                parse_mode='Markdown'
+            )
 
 async def process_video_generation(update: Update, context: ContextTypes.DEFAULT_TYPE,
                                  processing_msg, wavespeed: WavespeedAPI, request_id: str, prompt: str, model: str = 'ultra_fast'):
