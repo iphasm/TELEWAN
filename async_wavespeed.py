@@ -1,0 +1,245 @@
+"""
+Async WaveSpeed API Client
+Reemplaza la implementación síncrona con aiohttp para arquitectura event-driven
+"""
+import aiohttp
+import asyncio
+import json
+from typing import Dict, Optional, Any
+from config import Config
+import logging
+
+logger = logging.getLogger(__name__)
+
+class AsyncWavespeedAPI:
+    """
+    Async client for WaveSpeed AI APIs
+    Reemplaza WavespeedAPI para arquitectura event-driven
+    """
+
+    def __init__(self):
+        self.api_key = Config.WAVESPEED_API_KEY
+        self.base_url = Config.WAVESPEED_BASE_URL
+        self.headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'Content-Type': 'application/json'
+        }
+
+    async def generate_video(self, prompt: str, image_url: str = None, model: str = None) -> Dict[str, Any]:
+        """
+        Genera un video usando diferentes modelos de Wavespeed AI (async)
+
+        Args:
+            prompt: Descripción del video a generar
+            image_url: URL de la imagen de referencia (opcional para text-to-video)
+            model: Modelo a usar ('ultra_fast', 'fast', 'quality', 'text_to_video')
+        """
+        if model is None or model not in Config.AVAILABLE_MODELS:
+            model = Config.DEFAULT_MODEL
+
+        model_endpoint = Config.AVAILABLE_MODELS[model]
+        endpoint = f"{self.base_url}/api/v3/wavespeed-ai/{model_endpoint}"
+
+        # Configuración específica por modelo
+        model_config = {
+            'ultra_fast': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '480p'},
+            'fast': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '480p'},
+            'quality': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '720p'},
+            'text_to_video': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '480p'}
+        }
+
+        config = model_config.get(model, model_config['ultra_fast'])
+
+        payload = {
+            "duration": config['duration'],
+            "prompt": prompt,
+            "negative_prompt": Config.NEGATIVE_PROMPT,
+            "seed": -1
+        }
+
+        # Solo incluir imagen si no es text-to-video o si se proporciona
+        if image_url and model != 'text_to_video':
+            payload["image"] = image_url
+            payload["last_image"] = ""
+        elif model == 'text_to_video' and image_url:
+            # Para text-to-video con imagen de referencia opcional
+            payload["image"] = image_url
+            payload["last_image"] = ""
+
+        async with aiohttp.ClientSession(headers=self.headers) as session:
+            try:
+                logger.info(f"🚀 Iniciando generación de video con modelo: {model}")
+                async with session.post(endpoint, json=payload) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    logger.info("✅ Video generation request submitted successfully")
+                    return result
+            except aiohttp.ClientError as e:
+                logger.error(f"❌ Error en la API de Wavespeed: {e}")
+                raise
+
+    async def get_video_status(self, request_id: str) -> Dict[str, Any]:
+        """
+        Obtiene el estado de una tarea de generación de video (async)
+        """
+        endpoint = f"{self.base_url}/api/v3/predictions/{request_id}/result"
+
+        async with aiohttp.ClientSession(headers=self.headers) as session:
+            try:
+                async with session.get(endpoint) as response:
+                    response.raise_for_status()
+                    return await response.json()
+            except aiohttp.ClientError as e:
+                logger.error(f"❌ Error obteniendo estado del video: {e}")
+                raise
+
+    async def download_video(self, video_url: str, timeout: int = 30) -> bytes:
+        """
+        Descarga el video generado con mejor manejo de errores (async)
+        """
+        try:
+            logger.info(f"📥 Iniciando descarga de video desde: {video_url[:50]}...")
+            logger.info(f"   Timeout configurado: {timeout} segundos")
+
+            # Headers para la descarga
+            headers = {
+                'User-Agent': 'TELEWAN-Bot/1.0',
+                'Accept': 'video/mp4,video/*,*/*'
+            }
+
+            timeout_config = aiohttp.ClientTimeout(total=timeout)
+
+            async with aiohttp.ClientSession(headers=headers, timeout=timeout_config) as session:
+                async with session.get(video_url) as response:
+                    response.raise_for_status()
+
+                    # Verificar el tipo de contenido
+                    content_type = response.headers.get('content-type', '')
+                    logger.info(f"   Content-Type: {content_type}")
+                    logger.info(f"   Content-Length: {response.headers.get('content-length', 'unknown')}")
+
+                    # Verificar que sea un video
+                    if not content_type.startswith('video/'):
+                        logger.warning(f"⚠️  Content-Type inesperado: {content_type}")
+
+                    # Descargar el contenido
+                    content = await response.read()
+                    logger.info(f"✅ Video descargado exitosamente: {len(content)} bytes")
+
+                    return content
+
+        except asyncio.TimeoutError as e:
+            logger.error(f"⏰ Timeout descargando video ({timeout}s): {e}")
+            raise
+        except aiohttp.ClientError as e:
+            logger.error(f"🌐 Error de conexión descargando video: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"💥 Error inesperado descargando video: {e}")
+            raise
+
+    async def optimize_prompt_v3(self, image_url: str, text: str, mode: str = "video", style: str = "default") -> Dict[str, Any]:
+        """
+        Optimiza un prompt usando la nueva API v3 de WaveSpeedAI (async)
+
+        Args:
+            image_url: URL de la imagen a analizar
+            text: Texto del prompt a optimizar
+            mode: Modo de optimización ('video' o 'image')
+            style: Estilo de optimización ('default', 'realistic', 'cinematic')
+        """
+        endpoint = f"{self.base_url}/api/v3/wavespeed-ai/prompt-optimizer"
+
+        payload = {
+            "enable_sync_mode": False,
+            "image": image_url,
+            "mode": mode,
+            "style": style,
+            "text": text
+        }
+
+        logger.info(f"🤖 Calling prompt optimizer v3: image={image_url[:50]}..., text='{text}', mode={mode}, style={style}")
+
+        async with aiohttp.ClientSession(headers=self.headers) as session:
+            try:
+                async with session.post(endpoint, json=payload) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    logger.info("✅ Prompt optimization request submitted successfully")
+                    return result
+            except aiohttp.ClientError as e:
+                logger.error(f"❌ Error en nuevo prompt optimizer v3: {e}")
+                raise
+
+    async def get_prompt_optimizer_result(self, request_id: str) -> Dict[str, Any]:
+        """
+        Obtiene el resultado de una tarea de optimización de prompt (async)
+        """
+        endpoint = f"{self.base_url}/api/v3/predictions/{request_id}/result"
+
+        async with aiohttp.ClientSession(headers=self.headers) as session:
+            try:
+                async with session.get(endpoint) as response:
+                    response.raise_for_status()
+                    return await response.json()
+            except aiohttp.ClientError as e:
+                logger.error(f"❌ Error obteniendo resultado del prompt optimizer: {e}")
+                raise
+
+    def _format_download_error(self, error: Exception, video_url: str) -> str:
+        """
+        Formatea un mensaje de error detallado para problemas de descarga
+        """
+        error_type = type(error).__name__
+
+        base_message = "❌ Error al descargar el video después de múltiples intentos.\n\n"
+
+        if isinstance(error, asyncio.TimeoutError):
+            base_message += "⏰ **Error de timeout**\n"
+            base_message += "El servidor tardó demasiado en responder.\n\n"
+        elif isinstance(error, aiohttp.ClientError):
+            base_message += "🌐 **Error de conexión**\n"
+            base_message += "No se pudo conectar al servidor de videos.\n\n"
+        else:
+            base_message += "📡 **Error desconocido**\n"
+            base_message += f"Tipo: `{error_type}`\n\n"
+
+        base_message += f"🔗 **URL del video:**\n{video_url}\n\n"
+        base_message += "💡 Contacta al administrador si el problema persiste."
+
+        return base_message
+
+    def get_available_models(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Retorna información sobre los modelos disponibles
+        """
+        return {
+            'ultra_fast': {
+                'name': 'Ultra Fast 480p',
+                'description': 'Video rápido en 480p, duración máxima 8s',
+                'duration_max': 8,
+                'resolution': '480p',
+                'speed': 'ultra_fast'
+            },
+            'fast': {
+                'name': 'Fast 480p',
+                'description': 'Video rápido en 480p con mejor calidad',
+                'duration_max': 8,
+                'resolution': '480p',
+                'speed': 'fast'
+            },
+            'quality': {
+                'name': 'Quality 720p',
+                'description': 'Video de alta calidad en 720p',
+                'duration_max': 8,
+                'resolution': '720p',
+                'speed': 'quality'
+            },
+            'text_to_video': {
+                'name': 'Text to Video 480p',
+                'description': 'Genera video solo desde texto (sin imagen)',
+                'duration_max': 8,
+                'resolution': '480p',
+                'speed': 'ultra_fast'
+            }
+        }

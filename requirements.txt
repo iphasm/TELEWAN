@@ -1,8 +1,19 @@
 python-telegram-bot==21.4
-requests==2.31.0
+requests==2.31.0  # Mantener para compatibilidad, pero reemplazar en código con aiohttp
 python-dotenv==1.0.0
 pillow>=10.2.0  # Compatible with Python 3.14 (will install latest)
-flask==3.0.0
-gunicorn==21.2.0
+flask==3.0.0      # Mantener para compatibilidad, pero reemplazar con FastAPI
+gunicorn==21.2.0  # Mantener para compatibilidad, pero usar uvicorn
+
+# Async I/O dependencies (Fase 1)
+aiohttp>=3.9.0
+aiofiles==23.1.0
+
+# FastAPI dependencies (Fase 2 - preparado)
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# Redis dependencies (Fase 3 - preparado)
+redis>=5.0.0
 
 
