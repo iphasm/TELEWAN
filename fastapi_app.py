@@ -12,12 +12,30 @@ from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 import uvicorn
 
+# Imports de Telegram al inicio para evitar errores de scope
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
+
 from config import Config
 from bot import (
     start, help_command, list_models_command, handle_text_video,
-    handle_quality_video, handle_preview_video, handle_optimize
+    handle_quality_video, handle_preview_video, handle_optimize,
+    handle_photo, handle_document_image, handle_sticker_image,
+    image_document_filter, static_sticker_filter
 )
-from events import event_bus, init_event_bus, shutdown_event_bus, init_event_handlers, shutdown_event_handlers
+
+# Importar eventos con manejo de errores
+try:
+    from events import event_bus, init_event_bus, shutdown_event_bus, init_event_handlers, shutdown_event_handlers
+    EVENTS_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"⚠️ Sistema de eventos no disponible: {e}")
+    EVENTS_AVAILABLE = False
+    # Funciones dummy
+    async def init_event_bus(): pass
+    async def shutdown_event_bus(): pass
+    async def init_event_handlers(): pass
+    async def shutdown_event_handlers(): pass
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -86,7 +104,7 @@ async def lifespan(app: FastAPI):
 
         # 3. Inicializar aplicación de Telegram (requiere token)
         try:
-            from telegram.ext import Application, CommandHandler, MessageHandler, filters
+            # Usar imports del inicio del archivo (no re-importar)
             telegram_app = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
 
             # Agregar manejadores de comandos
@@ -99,10 +117,6 @@ async def lifespan(app: FastAPI):
             telegram_app.add_handler(CommandHandler("optimize", handle_optimize))
 
             # Agregar manejadores de mensajes (photos, documents, stickers)
-            from telegram.ext import MessageHandler, filters
-            from bot import handle_photo, handle_document_image, handle_sticker_image
-            from bot import image_document_filter, static_sticker_filter
-
             telegram_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
             telegram_app.add_handler(MessageHandler(image_document_filter, handle_document_image))
             telegram_app.add_handler(MessageHandler(static_sticker_filter, handle_sticker_image))
@@ -280,8 +294,7 @@ async def process_telegram_update(update_data: Dict[str, Any]):
     Procesa una actualización de Telegram de manera asíncrona
     """
     try:
-        from telegram import Update
-
+        # Update ya está importado al inicio del archivo
         update_id = update_data.get('update_id')
         logger.info(f"🔄 Procesando update {update_id}...")
 
@@ -358,19 +371,15 @@ def run_server():
         logger.info(f"🚀 Iniciando servidor FastAPI en {host}:{port}")
         logger.info(f"📊 Puerto configurado: {port} (usando PORT env si existe)")
 
+        # Usar app directamente para evitar problemas de re-importación
         uvicorn.run(
-            "fastapi_app:create_app",
-            factory=True,  # Usar factory function
+            app,  # Pasar la instancia directamente
             host=host,
             port=port,
-            reload=False,  # Desactivar reload en producción
             log_level="info",
             access_log=True,
             server_header=False,  # No exponer información del servidor
             date_header=False,
-            # Configuración para Railway
-            workers=1,  # Single worker para evitar conflictos
-            loop="asyncio"
         )
     except Exception as e:
         logger.error(f"💥 Error fatal iniciando servidor: {e}")
