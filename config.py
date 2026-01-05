@@ -33,58 +33,14 @@ class Config:
     POLLING_INTERVAL = 0.5  # segundos entre checks (como en el ejemplo)
 
     # Negative prompt automática para todas las solicitudes (configurable via env)
-    NEGATIVE_PROMPT = os.getenv('NEGATIVE_PROMPT',
-        "low quality, worst quality, blurry, artifacts, distortion, deformed, disfigured, ugly, extra limbs, mutated hands, malformed, poor anatomy, distorted face, distorted features, melting face, face morphing, changing face, changing identity, different person, text, watermark, logo, censored, mosaic, black bars, static camera, looped motion, bad transitions, fade transitions, jitter, flicker, clothing, underwear, bra, panties, shirt, pants, accessories, watch, smartwatch, cartoon, 3d render, doll, plastic skin, overexposed, underexposed, cluttered background"
-    )
+    NEGATIVE_PROMPT = os.getenv('NEGATIVE_PROMPT', '')
 
     # Mensajes del bot (configurable via env)
-    WELCOME_MESSAGE = os.getenv('WELCOME_MESSAGE',
-        "¡Hola! Soy un bot que transforma fotos en videos usando IA.\n\n"
-        "📸 **Cómo usar:**\n"
-        "1. Envía una foto con un caption descriptivo\n"
-        "2. El bot usará el texto del caption como prompt para generar un video\n"
-        "3. Espera a que se procese (puede tomar unos minutos)\n\n"
-        "**Ejemplo:**\n"
-        "Envía una foto de un paisaje con el caption: \"Un amanecer sobre las montañas con nubes moviéndose suavemente\"\n\n"
-        "¡Prueba enviando una foto ahora!"
-    )
-
-    HELP_MESSAGE = os.getenv('HELP_MESSAGE',
-        "🤖 **Comandos disponibles:**\n\n"
-        "/start - Inicia el bot y muestra instrucciones\n"
-        "/help - Muestra esta ayuda\n\n"
-        "🎬 **Modelos de video:**\n"
-        "/models - Ver todos los modelos disponibles\n"
-        "/preview - Modo preview rápida (480p ultra fast)\n"
-        "/quality - Videos de alta calidad (720p)\n\n"
-        "🎨 **Optimización:**\n"
-        "/optimize - Activar/desactivar optimización IA automática\n\n"
-        "📝 **Cómo usar:**\n"
-        "• Envía una foto con un caption descriptivo\n"
-        "• El bot genera un video basado en tu descripción\n"
-        "• Los videos tardan entre 30 segundos y 5 minutos\n\n"
-        "💡 **Tips:**\n"
-        "• Sé descriptivo en tus captions\n"
-        "• Incluye detalles de movimiento y estilo\n"
-        "• Usa /preview para pruebas rápidas\n"
-        "• Usa /quality para resultados finales"
-    )
-
-    NO_CAPTION_MESSAGE = os.getenv('NO_CAPTION_MESSAGE',
-        "❌ **Error**: Enviaste una imagen sin descripción (caption).\n\n"
-        "Por favor, incluye una descripción detallada de lo que quieres generar, por ejemplo:\n"
-        "• 'Una mujer caminando por la ciudad con estilo fashion'\n"
-        "• 'Retrato de una persona sonriendo'\n\n"
-        "O configura la variable de entorno `DEFAULT_PROMPT` en Railway para usar un prompt automático."
-    )
-
-    PROCESSING_MESSAGE = os.getenv('PROCESSING_MESSAGE',
-        "🎬 Procesando tu imagen... Esto puede tomar unos minutos."
-    )
-
-    ACCESS_DENIED_MESSAGE = os.getenv('ACCESS_DENIED_MESSAGE',
-        "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
-    )
+    WELCOME_MESSAGE = os.getenv('WELCOME_MESSAGE', '')
+    HELP_MESSAGE = os.getenv('HELP_MESSAGE', '')
+    NO_CAPTION_MESSAGE = os.getenv('NO_CAPTION_MESSAGE', '')
+    PROCESSING_MESSAGE = os.getenv('PROCESSING_MESSAGE', '')
+    ACCESS_DENIED_MESSAGE = os.getenv('ACCESS_DENIED_MESSAGE', '')
 
     # Almacenamiento (para Railway u otros servicios)
     VOLUME_PATH = os.getenv('VOLUME_PATH', './storage')  # Default: ./storage

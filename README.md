@@ -253,12 +253,12 @@ El bot se configura principalmente a través de variables de entorno:
 - `USE_WEBHOOK`: Activar modo webhook (`true`/`false`)
 - `WEBHOOK_URL`: URL del webhook para Railway/Heroku
 
-#### Variables de Mensajes (Personalización Completa):
-- `WELCOME_MESSAGE`: Mensaje de bienvenida del comando `/start`
-- `HELP_MESSAGE`: Mensaje de ayuda del comando `/help`
-- `NO_CAPTION_MESSAGE`: Mensaje cuando se envía imagen sin caption
-- `PROCESSING_MESSAGE`: Mensaje mientras se procesa la imagen
-- `ACCESS_DENIED_MESSAGE`: Mensaje cuando usuario no autorizado intenta usar comandos
+#### Variables de Mensajes (Personalización Completa - Requieren Configuración):
+- `WELCOME_MESSAGE`: Mensaje de bienvenida del comando `/start` (requerido)
+- `HELP_MESSAGE`: Mensaje de ayuda del comando `/help` (requerido)
+- `NO_CAPTION_MESSAGE`: Mensaje cuando se envía imagen sin caption (requerido)
+- `PROCESSING_MESSAGE`: Mensaje mientras se procesa la imagen (requerido)
+- `ACCESS_DENIED_MESSAGE`: Mensaje cuando usuario no autorizado intenta usar comandos (opcional)
 
 #### Ejemplo de DEFAULT_PROMPT:
 ```
@@ -270,7 +270,7 @@ Absolutely fixed face and head position, zero head movement. No camera movement 
 low quality, worst quality, blurry, artifacts, distortion, deformed, disfigured, ugly, extra limbs, mutated hands, malformed, poor anatomy, distorted face, distorted features, melting face, face morphing, changing face, changing identity, different person, text, watermark, logo, censored, mosaic, black bars, static camera, looped motion, bad transitions, fade transitions, jitter, flicker, clothing, underwear, bra, panties, shirt, pants, accessories, watch, smartwatch, cartoon, 3d render, doll, plastic skin, overexposed, underexposed, cluttered background
 ```
 
-#### Ejemplos de Variables de Mensajes:
+#### Ejemplos de Variables de Mensajes (Requeridas):
 
 **WELCOME_MESSAGE:**
 ```
@@ -285,6 +285,50 @@ low quality, worst quality, blurry, artifacts, distortion, deformed, disfigured,
 Envía una foto de un paisaje con el caption: "Un amanecer sobre las montañas con nubes moviéndose suavemente"
 
 ¡Prueba enviando una foto ahora!
+```
+
+**HELP_MESSAGE:**
+```
+🤖 **Comandos disponibles:**
+
+/start - Inicia el bot y muestra instrucciones
+/help - Muestra esta ayuda
+
+🎬 **Modelos de video:**
+/models - Ver todos los modelos disponibles
+/preview - Modo preview rápida (480p ultra fast)
+/quality - Videos de alta calidad (720p)
+/textvideo - Generar video solo desde texto
+/optimize - Activar/desactivar optimización automática de prompts
+
+📸 **Cómo generar videos:**
+- Envía una foto con un caption descriptivo
+- El bot optimizará automáticamente el prompt con IA para mejores resultados
+- Soporta fotos, documentos de imagen y stickers estáticos
+
+💡 **Tips para mejores resultados:**
+- Sé descriptivo en tus captions
+- Incluye detalles sobre movimiento y estilo
+- Usa /preview para pruebas rápidas
+- Usa /quality para resultados finales
+
+¡Disfruta creando videos con IA! 🎬
+```
+
+**NO_CAPTION_MESSAGE:**
+```
+❌ **Error**: Enviaste una imagen sin descripción (caption).
+
+Por favor, incluye una descripción detallada de lo que quieres generar, por ejemplo:
+• 'Una mujer caminando por la ciudad con estilo fashion'
+• 'Retrato de una persona sonriendo'
+
+O configura la variable de entorno `DEFAULT_PROMPT` en Railway para usar un prompt automático.
+```
+
+**PROCESSING_MESSAGE:**
+```
+🎬 Procesando tu imagen... Esto puede tomar unos minutos.
 ```
 
 **ACCESS_DENIED_MESSAGE:**
