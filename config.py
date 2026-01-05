@@ -57,6 +57,8 @@ class Config:
         "/quality - Videos de alta calidad (720p)\n\n"
         "🎨 **Optimización:**\n"
         "/optimize - Activar/desactivar optimización IA automática\n\n"
+        "🔄 **Recuperación:**\n"
+        "/lastvideo - Recuperar el último video procesado\n\n"
         "📝 **Cómo usar:**\n"
         "• Envía una foto con un caption descriptivo\n"
         "• El bot genera un video basado en tu descripción\n"
@@ -65,7 +67,8 @@ class Config:
         "• Sé descriptivo en tus captions\n"
         "• Incluye detalles de movimiento y estilo\n"
         "• Usa /preview para pruebas rápidas\n"
-        "• Usa /quality para resultados finales"
+        "• Usa /quality para resultados finales\n"
+        "• Si no recibes un video, usa /lastvideo para recuperarlo"
     )
 
     NO_CAPTION_MESSAGE = os.getenv('NO_CAPTION_MESSAGE',

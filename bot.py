@@ -735,6 +735,18 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                                     parse_mode='Markdown'
                                                 )
 
+                                            # Almacenar información del último video procesado para recuperación
+                                            context.user_data['last_video'] = {
+                                                'filepath': video_filepath,
+                                                'caption': video_caption,
+                                                'timestamp': datetime.now().isoformat(),
+                                                'model': user_model,
+                                                'request_id': request_id,
+                                                'prompt_optimized': prompt_optimized,
+                                                'original_caption': original_caption
+                                            }
+                                            logger.info(f"💾 Último video almacenado para usuario {user_id}")
+
                                             # Confirmar envío exitoso
                                             success_msg = "✅ ¡Video enviado exitosamente!"
                                             if prompt_optimized:
@@ -856,7 +868,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     await update.message.reply_text(Config.HELP_MESSAGE, parse_mode='Markdown')
-    await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def list_models_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Muestra los modelos disponibles de Wavespeed AI"""
@@ -1008,6 +1019,92 @@ async def handle_optimize(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
 
     logger.info(f"Usuario {user_id} cambió optimización automática a: {new_state}")
+
+async def handle_lastvideo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador para el comando /lastvideo - recuperar el último video procesado"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
+        return
+
+    # Verificar si hay un último video almacenado
+    last_video = context.user_data.get('last_video')
+    if not last_video:
+        await update.message.reply_text(
+            "📭 **No hay videos recientes**\n\n"
+            "No tienes ningún video procesado recientemente para recuperar.\n\n"
+            "💡 **Para recuperar un video:**\n"
+            "1. Envía una imagen con caption\n"
+            "2. Espera a que se procese\n"
+            "3. Si no lo recibes, usa `/lastvideo`",
+            parse_mode='Markdown'
+        )
+        logger.info(f"Usuario {user_id} intentó recuperar video pero no hay ninguno almacenado")
+        return
+
+    try:
+        # Verificar que el archivo aún existe
+        video_filepath = last_video.get('filepath')
+        if not video_filepath or not os.path.exists(video_filepath):
+            await update.message.reply_text(
+                "❌ **Video no encontrado**\n\n"
+                "El archivo del último video ya no está disponible.\n\n"
+                "💡 **Solución:** Procesa una nueva imagen para generar un video fresco.",
+                parse_mode='Markdown'
+            )
+            logger.warning(f"Usuario {user_id} intentó recuperar video pero archivo no existe: {video_filepath}")
+            return
+
+        # Preparar información del video
+        timestamp = last_video.get('timestamp', 'desconocido')
+        model = last_video.get('model', 'desconocido')
+        prompt_optimized = last_video.get('prompt_optimized', False)
+        original_caption = last_video.get('original_caption', 'sin caption')
+        request_id = last_video.get('request_id', 'desconocido')
+
+        # Preparar caption con información adicional
+        recovery_caption = f"🔄 **Video Recuperado**\n\n"
+        recovery_caption += f"📅 **Procesado:** {timestamp}\n"
+        recovery_caption += f"🎬 **Modelo:** {model}\n"
+        recovery_caption += f"🆔 **ID:** `{request_id[:8]}...`\n"
+
+        if prompt_optimized:
+            recovery_caption += f"🎨 **Optimizado:** Sí\n"
+            recovery_caption += f"📝 **Original:** {original_caption}\n\n"
+        else:
+            recovery_caption += f"🎨 **Optimizado:** No\n\n"
+
+        recovery_caption += f"💡 **Nota:** Este es el último video que procesaste."
+
+        # Enviar el video recuperado
+        with open(video_filepath, 'rb') as video_file:
+            await context.bot.send_video(
+                chat_id=update.effective_chat.id,
+                video=video_file,
+                caption=recovery_caption,
+                supports_streaming=True,
+                parse_mode='Markdown'
+            )
+
+        await update.message.reply_text(
+            "✅ **Video recuperado exitosamente** ✨\n\n"
+            "El último video procesado ha sido reenviado.",
+            parse_mode='Markdown'
+        )
+
+        logger.info(f"Usuario {user_id} recuperó exitosamente el último video: {video_filepath}")
+
+    except Exception as e:
+        logger.error(f"Error recuperando último video para usuario {user_id}: {e}")
+        await update.message.reply_text(
+            "❌ **Error recuperando video**\n\n"
+            f"Ocurrió un error al intentar recuperar el último video.\n\n"
+            f"**Detalles:** {str(e)}\n\n"
+            f"💡 Inténtalo de nuevo o procesa una nueva imagen.",
+            parse_mode='Markdown'
+        )
 
 async def process_video_generation(update: Update, context: ContextTypes.DEFAULT_TYPE,
                                  processing_msg, wavespeed: WavespeedAPI, request_id: str, prompt: str):
