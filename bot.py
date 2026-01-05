@@ -573,7 +573,7 @@ class VideoDownloader:
     def download_video_curl_cffi(self, url: str, platform: str) -> dict:
         """
         Descarga un video usando curl_cffi con impersonación de navegador
-        Alternativa avanzada para plataformas problemáticas como TikTok
+        Método principal para todas las plataformas soportadas
         """
         if not CURL_CFFI_AVAILABLE:
             return {
@@ -623,7 +623,7 @@ class VideoDownloader:
             # Buscar URLs de video en la respuesta (JSON o HTML)
             content = response.text
 
-            # Para TikTok, buscar el JSON con la información del video
+            # Lógica específica por plataforma para extracción de datos
             if platform == 'TikTok':
                 # Buscar patrones comunes de URLs de video en TikTok
                 video_patterns = [
@@ -706,11 +706,62 @@ class VideoDownloader:
                 }
 
             else:
-                # Para otras plataformas, usar yt-dlp como fallback
-                return {
-                    'success': False,
-                    'error': f'curl_cffi no implementado para {platform}, usar yt-dlp'
-                }
+                # Para otras plataformas (Facebook, Instagram, etc.), intentar descarga directa
+                logger.info(f"🎯 Intentando descarga directa para {platform}")
+
+                # Para estas plataformas, la URL directa debería funcionar
+                video_response = curl_requests.get(
+                    url,
+                    impersonate=impersonate_target,
+                    headers=headers,
+                    timeout=60,
+                    allow_redirects=True
+                )
+
+                if video_response.status_code != 200:
+                    return {
+                        'success': False,
+                        'error': f'Error accediendo a {platform}: HTTP {video_response.status_code}'
+                    }
+
+                # Verificar si la respuesta contiene un video
+                content_type = video_response.headers.get('content-type', '').lower()
+
+                # Si es un video directo, guardarlo
+                if 'video/' in content_type or 'mp4' in content_type:
+                    video_bytes = video_response.content
+                    file_size = len(video_bytes)
+
+                    if file_size < 10000:  # 10KB mínimo
+                        return {
+                            'success': False,
+                            'error': f'Contenido descargado demasiado pequeño: {file_size} bytes'
+                        }
+
+                    # Extraer título del URL o usar genérico
+                    title = f"{platform} Video"
+                    duration = 0  # No podemos determinar duración sin metadata
+
+                    video_filename = generate_serial_filename(f"{platform.lower().replace(' ', '_')}_curl", "mp4")
+                    video_filepath = save_video_to_volume(video_bytes, video_filename)
+
+                    return {
+                        'success': True,
+                        'filepath': video_filepath,
+                        'title': title,
+                        'duration': duration,
+                        'platform': platform,
+                        'file_size': file_size,
+                        'method': 'curl_cffi'
+                    }
+
+                else:
+                    # No es un video directo, probablemente una página HTML
+                    # Esto requiere parsing más complejo que yt-dlp maneja mejor
+                    return {
+                        'success': False,
+                        'error': f'{platform} requiere parsing HTML complejo, usar yt-dlp'
+                    }
 
         except Exception as e:
             logger.error(f"Error en curl_cffi para {platform}: {e}")
@@ -721,7 +772,7 @@ class VideoDownloader:
 
     def download_video(self, url: str) -> dict:
         """
-        Descarga un video de redes sociales usando yt-dlp
+        Descarga un video de redes sociales usando curl_cffi (primer método) con fallback a yt-dlp
 
         Returns:
             dict: {
@@ -730,6 +781,7 @@ class VideoDownloader:
                 'title': str,
                 'duration': int,
                 'platform': str,
+                'method': str,  # 'curl_cffi' o 'yt-dlp'
                 'error': str (si fallo)
             }
         """
@@ -743,7 +795,18 @@ class VideoDownloader:
 
             logger.info(f"📥 Descargando video de {platform}: {url}")
 
-            # Generar nombre único para el archivo
+            # Usar curl_cffi como primer método si está disponible
+            if CURL_CFFI_AVAILABLE:
+                logger.info("🎯 Intentando curl_cffi como primer método")
+                curl_result = self.download_video_curl_cffi(url, platform)
+                if curl_result['success']:
+                    logger.info("✅ curl_cffi funcionó exitosamente")
+                    return curl_result
+                else:
+                    logger.warning(f"⚠️ curl_cffi falló: {curl_result.get('error', 'Unknown error')}")
+                    logger.info("🔄 Intentando con yt-dlp como fallback")
+
+            # Fallback a yt-dlp
             video_id = str(uuid.uuid4())[:8]
             output_template = os.path.join(self.temp_dir, f'social_video_{video_id}.%(ext)s')
 
@@ -760,25 +823,20 @@ class VideoDownloader:
                 '--print', '%(ext)s',
             ]
 
-            # Configuración específica por plataforma
+            # Configuración para yt-dlp (fallback después de curl_cffi)
+            # Usar configuración más básica ya que curl_cffi maneja la impersonación avanzada
+            cmd.extend([
+                '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                '--add-header', 'Accept-Language: en-US,en;q=0.9',
+            ])
+
+            # Configuración específica adicional por plataforma para yt-dlp
             if platform == 'TikTok':
-                # TikTok requiere configuración especial para evitar bloqueos
-                cmd.extend([
-                    '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-                    '--add-header', 'Referer: https://www.tiktok.com/',
-                    # Intentar sin extractor-args primero para evitar problemas de impersonación
-                ])
-            elif platform in ['Facebook', 'Instagram']:
-                # Redes sociales requieren user-agent moderno
-                cmd.extend([
-                    '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-                    '--add-header', 'Accept-Language: en-US,en;q=0.9',
-                ])
-            else:
-                # Configuración general para otras plataformas
-                cmd.extend([
-                    '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-                ])
+                cmd.extend(['--add-header', 'Referer: https://www.tiktok.com/'])
+            elif platform == 'Facebook':
+                cmd.extend(['--add-header', 'Referer: https://www.facebook.com/'])
+            elif platform == 'Instagram':
+                cmd.extend(['--add-header', 'Referer: https://www.instagram.com/'])
 
             # Agregar la URL al final
             cmd.append(url)
@@ -795,17 +853,6 @@ class VideoDownloader:
 
             if result.returncode != 0:
                 logger.error(f"Error en yt-dlp: {result.stderr}")
-
-                # Fallback a curl_cffi para TikTok si yt-dlp falla
-                if platform == 'TikTok' and CURL_CFFI_AVAILABLE and 'impersonat' in result.stderr.lower():
-                    logger.info("🎯 Error de impersonación en TikTok - intentando curl_cffi")
-                    curl_result = self.download_video_curl_cffi(url, platform)
-                    if curl_result['success']:
-                        logger.info("✅ curl_cffi funcionó como fallback para TikTok")
-                        return curl_result
-                    else:
-                        logger.warning(f"⚠️ curl_cffi también falló: {curl_result.get('error', 'Unknown error')}")
-
                 return {
                     'success': False,
                     'error': f'Error descargando video: {result.stderr[:200]}...'
@@ -1914,6 +1961,7 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     processing_msg = await update.message.reply_text(
         "🎬 **Descargando video...**\n\n"
         f"🔗 **URL:** {url[:50]}{'...' if len(url) > 50 else ''}\n\n"
+        "🔧 **Método:** curl_cffi (avanzado) + yt-dlp fallback\n"
         "⏳ Esto puede tomar unos minutos...",
         parse_mode='Markdown'
     )
@@ -1967,16 +2015,18 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     parse_mode='Markdown'
                 )
 
-            # Confirmar envío exitoso
-            await processing_msg.edit_text(
-                "✅ **Video enviado exitosamente** ✨\n\n"
-                f"🎬 **{platform} Video**\n"
-                f"📹 **{title[:50]}{'...' if len(title) > 50 else ''}**\n\n"
-                "🗑️ Archivo temporal eliminado.",
-                parse_mode='Markdown'
-            )
+        # Confirmar envío exitoso
+        method_used = result.get('method', 'desconocido')
+        await processing_msg.edit_text(
+            "✅ **Video enviado exitosamente** ✨\n\n"
+            f"🎬 **{platform} Video**\n"
+            f"📹 **{title[:50]}{'...' if len(title) > 50 else ''}**\n"
+            f"🔧 **Método usado:** {method_used}\n\n"
+            "🗑️ Archivo temporal eliminado.",
+            parse_mode='Markdown'
+        )
 
-            logger.info(f"Video enviado exitosamente a usuario {user_id}")
+        logger.info(f"Video enviado exitosamente a usuario {user_id} usando método {method_used}")
 
         except Exception as send_error:
             logger.error(f"Error enviando video a Telegram: {send_error}")
@@ -2047,6 +2097,7 @@ async def handle_social_url(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     processing_msg = await update.message.reply_text(
         "🎬 **Descargando video automáticamente...**\n\n"
         f"🔗 **URL detectada:** {url[:50]}{'...' if len(url) > 50 else ''}\n\n"
+        "🔧 **Método:** curl_cffi (avanzado) + yt-dlp fallback\n"
         "⏳ Procesando...",
         parse_mode='Markdown'
     )
@@ -2093,10 +2144,12 @@ async def handle_social_url(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 )
 
             # Confirmar envío exitoso
+            method_used = result.get('method', 'desconocido')
             await processing_msg.edit_text(
                 "✅ **Video descargado y enviado automáticamente** ✨\n\n"
-                f"🎬 **{platform} Video**\n"
-                f"📹 **{title[:50]}{'...' if len(title) > 50 else ''}**\n\n"
+                f"🎬 **{platform} Video (Auto-descargado)**\n"
+                f"📹 **{title[:50]}{'...' if len(title) > 50 else ''}**\n"
+                f"🔧 **Método usado:** {method_used}\n\n"
                 "🤖 Detección automática activada.",
                 parse_mode='Markdown'
             )
