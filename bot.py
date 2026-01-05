@@ -13,14 +13,21 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Message
 
-# Import opcional para curl_cffi
-try:
-    from curl_cffi import requests as curl_requests
-    CURL_CFFI_AVAILABLE = True
-    logger.info("✅ curl_cffi disponible para descargas avanzadas")
-except ImportError:
-    CURL_CFFI_AVAILABLE = False
-    logger.warning("⚠️ curl_cffi no disponible - usando solo yt-dlp")
+# Import opcional para curl_cffi (se verifica después de definir logger)
+CURL_CFFI_AVAILABLE = False
+curl_requests = None
+
+def _init_curl_cffi():
+    """Inicializar curl_cffi si está disponible"""
+    global CURL_CFFI_AVAILABLE, curl_requests
+    try:
+        from curl_cffi import requests as curl_req
+        curl_requests = curl_req
+        CURL_CFFI_AVAILABLE = True
+        logger.info("✅ curl_cffi disponible para descargas avanzadas")
+    except ImportError as e:
+        CURL_CFFI_AVAILABLE = False
+        logger.warning(f"⚠️ curl_cffi no disponible - usando solo yt-dlp: {e}")
 
 # Filtros personalizados para imágenes
 class ImageDocumentFilter:
@@ -85,6 +92,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Inicializar curl_cffi después de definir logger
+_init_curl_cffi()
 
 # Prompt por defecto cuando no se proporciona caption (configurable via env)
 DEFAULT_PROMPT = os.getenv('DEFAULT_PROMPT', '')
