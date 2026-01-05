@@ -5,7 +5,7 @@ import io
 import os
 import uuid
 from datetime import datetime
-from flask import Flask, request, jsonify
+# Flask removido - ahora usamos FastAPI (ver fastapi_app.py)
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Message
@@ -1186,26 +1186,9 @@ async def process_video_generation(update: Update, context: ContextTypes.DEFAULT
         )
 
 def create_app():
-    """Crear aplicación Flask para webhooks y healthcheck"""
-    app = Flask(__name__)
-
-    # Healthcheck endpoint
-    @app.route('/', methods=['GET'])
-    def healthcheck():
-        logger.info("Healthcheck endpoint called")
-        return jsonify({
-            "status": "healthy",
-            "service": "TELEWAN Bot",
-            "timestamp": datetime.now().isoformat()
-        }), 200
-
-    # Test endpoint
-    @app.route('/test', methods=['GET'])
-    def test():
-        logger.info("Test endpoint called")
-        return jsonify({"message": "TELEWAN Bot is running"}), 200
-
-    return app
+    """Importar aplicación FastAPI (reemplaza Flask)"""
+    from fastapi_app import create_app as create_fastapi_app
+    return create_fastapi_app()
 
 def main() -> None:
     """Función principal"""
@@ -1226,58 +1209,11 @@ def main() -> None:
 
     # Crear aplicación
     if use_webhook:
-        logger.info("Configurando bot para usar WEBHOOKS con Flask")
+        logger.info("🎯 Configurando bot para usar WEBHOOKS con FastAPI (ASGI)")
         logger.info(f"WEBHOOK_URL: {Config.WEBHOOK_URL}")
         logger.info(f"WEBHOOK_PORT: {Config.WEBHOOK_PORT}")
         logger.info(f"WEBHOOK_PATH: {Config.WEBHOOK_PATH}")
         logger.info(f"PORT env: {os.getenv('PORT', 'not set')}")
-
-        # Crear aplicación Flask
-        app = create_app()
-
-        # Crear aplicación de Telegram
-        application = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
-
-        # Agregar manejadores
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("help", help_command))
-        application.add_handler(CommandHandler("models", list_models_command))
-        application.add_handler(CommandHandler("textvideo", handle_text_video))
-        application.add_handler(CommandHandler("quality", handle_quality_video))
-        application.add_handler(CommandHandler("preview", handle_preview_video))
-        application.add_handler(CommandHandler("optimize", handle_optimize))
-        # Múltiples handlers para diferentes tipos de imágenes
-        application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-        application.add_handler(MessageHandler(image_document_filter, handle_document_image))
-        application.add_handler(MessageHandler(static_sticker_filter, handle_sticker_image))
-
-        # Configurar webhook con Flask
-        webhook_path = Config.WEBHOOK_PATH
-
-        @app.route(webhook_path, methods=['POST'])
-        def webhook_handler():
-            """Manejar webhooks de Telegram"""
-            try:
-                # Verificar secret token si está configurado
-                secret_token = os.getenv('WEBHOOK_SECRET_TOKEN')
-                if secret_token:
-                    received_token = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
-                    if received_token != secret_token:
-                        logger.warning("Invalid secret token received")
-                        return jsonify({"error": "Unauthorized"}), 401
-
-                # Procesar la actualización
-                update_data = request.get_json()
-                if update_data:
-                    update = Update.de_json(update_data, application.bot)
-                    application.process_update(update)
-                    return jsonify({"status": "ok"}), 200
-                else:
-                    return jsonify({"error": "No update data"}), 400
-
-            except Exception as e:
-                logger.error(f"Error processing webhook: {e}")
-                return jsonify({"error": "Internal server error"}), 500
 
         # Configurar webhook URL en Telegram
         if Config.WEBHOOK_URL:
@@ -1286,7 +1222,7 @@ def main() -> None:
             if not webhook_base_url.startswith('http'):
                 webhook_base_url = f"https://{webhook_base_url}"
 
-            webhook_url = f"{webhook_base_url}{webhook_path}"
+            webhook_url = f"{webhook_base_url}{Config.WEBHOOK_PATH}"
             logger.info(f"Webhook URL completa: {webhook_url}")
 
             # Intentar configurar webhook en Telegram
@@ -1297,6 +1233,8 @@ def main() -> None:
                 if secret_token:
                     payload["secret_token"] = secret_token
 
+                # Usar requests para configurar webhook (no necesitamos async aquí)
+                import requests
                 response = requests.post(telegram_api_url, json=payload, timeout=10)
                 result = response.json()
                 if result.get("ok"):
@@ -1308,14 +1246,15 @@ def main() -> None:
             except Exception as e:
                 logger.error(f"Error configurando webhook: {e}")
 
-        # Iniciar servidor Flask
-        logger.info(f"🚀 Iniciando servidor Flask en puerto {Config.WEBHOOK_PORT}")
-        logger.info("Servidor web listo para recibir peticiones")
+        # Iniciar servidor FastAPI con Uvicorn
+        logger.info(f"🚀 Iniciando servidor FastAPI con Uvicorn en puerto {Config.WEBHOOK_PORT}")
+        logger.info("Servidor ASGI listo para recibir peticiones")
 
         try:
-            app.run(host="0.0.0.0", port=Config.WEBHOOK_PORT, debug=False)
+            from fastapi_app import run_server
+            run_server()
         except Exception as server_error:
-            logger.error(f"Error iniciando servidor Flask: {server_error}")
+            logger.error(f"Error iniciando servidor FastAPI: {server_error}")
             raise
 
     else:
