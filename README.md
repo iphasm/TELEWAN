@@ -245,20 +245,22 @@ El bot se configura principalmente a través de variables de entorno:
 - `TELEGRAM_BOT_TOKEN`: Token del bot de Telegram (obténlo de @BotFather)
 - `WAVESPEED_API_KEY`: API Key de Wavespeed AI
 
+#### Variables Altamente Recomendadas:
+- `DEFAULT_PROMPT`: Prompt por defecto cuando no se proporciona caption (requerido para funcionalidad completa)
+- `NEGATIVE_PROMPT`: Filtros negativos para mejorar calidad (requerido para mejores resultados)
+
 #### Variables Opcionales:
 - `ALLOWED_USER_ID`: ID de usuario autorizado (restringe acceso a un usuario específico)
-- `DEFAULT_PROMPT`: Prompt por defecto cuando no se proporciona caption (ver ejemplo abajo)
-- `NEGATIVE_PROMPT`: Filtros negativos para mejorar calidad (ver ejemplo abajo)
 - `DEFAULT_MODEL`: Modelo por defecto (`ultra_fast`, `fast`, `quality`, `text_to_video`)
 - `USE_WEBHOOK`: Activar modo webhook (`true`/`false`)
 - `WEBHOOK_URL`: URL del webhook para Railway/Heroku
 
-#### Variables de Mensajes (Personalización Completa - Requieren Configuración):
-- `WELCOME_MESSAGE`: Mensaje de bienvenida del comando `/start` (requerido)
-- `HELP_MESSAGE`: Mensaje de ayuda del comando `/help` (requerido)
-- `NO_CAPTION_MESSAGE`: Mensaje cuando se envía imagen sin caption (requerido)
-- `PROCESSING_MESSAGE`: Mensaje mientras se procesa la imagen (requerido)
-- `ACCESS_DENIED_MESSAGE`: Mensaje cuando usuario no autorizado intenta usar comandos (opcional)
+#### Variables de Mensajes (Opcionales - Tienen Valores por Defecto):
+- `WELCOME_MESSAGE`: Mensaje de bienvenida del comando `/start`
+- `HELP_MESSAGE`: Mensaje de ayuda del comando `/help`
+- `NO_CAPTION_MESSAGE`: Mensaje cuando se envía imagen sin caption
+- `PROCESSING_MESSAGE`: Mensaje mientras se procesa la imagen
+- `ACCESS_DENIED_MESSAGE`: Mensaje cuando usuario no autorizado intenta usar comandos
 
 #### Ejemplo de DEFAULT_PROMPT:
 ```
@@ -270,70 +272,16 @@ Absolutely fixed face and head position, zero head movement. No camera movement 
 low quality, worst quality, blurry, artifacts, distortion, deformed, disfigured, ugly, extra limbs, mutated hands, malformed, poor anatomy, distorted face, distorted features, melting face, face morphing, changing face, changing identity, different person, text, watermark, logo, censored, mosaic, black bars, static camera, looped motion, bad transitions, fade transitions, jitter, flicker, clothing, underwear, bra, panties, shirt, pants, accessories, watch, smartwatch, cartoon, 3d render, doll, plastic skin, overexposed, underexposed, cluttered background
 ```
 
-#### Ejemplos de Variables de Mensajes (Requeridas):
+#### Mensajes del Bot (Opcionales):
+Los mensajes del bot tienen valores por defecto razonables incluidos en el código. Solo configúralos si quieres personalizar completamente la experiencia del usuario.
 
-**WELCOME_MESSAGE:**
-```
-¡Hola! Soy un bot que transforma fotos en videos usando IA.
+**Ejemplos de personalización:**
+```bash
+# Cambiar idioma a inglés
+WELCOME_MESSAGE=Hello! I'm a bot that transforms photos into videos using AI...
 
-📸 **Cómo usar:**
-1. Envía una foto con un caption descriptivo
-2. El bot usará el texto del caption como prompt para generar un video
-3. Espera a que se procese (puede tomar unos minutos)
-
-**Ejemplo:**
-Envía una foto de un paisaje con el caption: "Un amanecer sobre las montañas con nubes moviéndose suavemente"
-
-¡Prueba enviando una foto ahora!
-```
-
-**HELP_MESSAGE:**
-```
-🤖 **Comandos disponibles:**
-
-/start - Inicia el bot y muestra instrucciones
-/help - Muestra esta ayuda
-
-🎬 **Modelos de video:**
-/models - Ver todos los modelos disponibles
-/preview - Modo preview rápida (480p ultra fast)
-/quality - Videos de alta calidad (720p)
-/textvideo - Generar video solo desde texto
-/optimize - Activar/desactivar optimización automática de prompts
-
-📸 **Cómo generar videos:**
-- Envía una foto con un caption descriptivo
-- El bot optimizará automáticamente el prompt con IA para mejores resultados
-- Soporta fotos, documentos de imagen y stickers estáticos
-
-💡 **Tips para mejores resultados:**
-- Sé descriptivo en tus captions
-- Incluye detalles sobre movimiento y estilo
-- Usa /preview para pruebas rápidas
-- Usa /quality para resultados finales
-
-¡Disfruta creando videos con IA! 🎬
-```
-
-**NO_CAPTION_MESSAGE:**
-```
-❌ **Error**: Enviaste una imagen sin descripción (caption).
-
-Por favor, incluye una descripción detallada de lo que quieres generar, por ejemplo:
-• 'Una mujer caminando por la ciudad con estilo fashion'
-• 'Retrato de una persona sonriendo'
-
-O configura la variable de entorno `DEFAULT_PROMPT` en Railway para usar un prompt automático.
-```
-
-**PROCESSING_MESSAGE:**
-```
-🎬 Procesando tu imagen... Esto puede tomar unos minutos.
-```
-
-**ACCESS_DENIED_MESSAGE:**
-```
-❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados.
+# Mensaje más corto
+HELP_MESSAGE=🤖 Commands: /start /help /models /preview /quality
 ```
 
 ### Configuración en Código
