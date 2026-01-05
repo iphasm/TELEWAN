@@ -1,2 +1,2 @@
-web: python minimal_app.py
+web: python fastapi_app.py
 
