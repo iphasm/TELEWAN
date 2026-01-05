@@ -1763,6 +1763,130 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 parse_mode='Markdown'
             )
 
+async def handle_social_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador automático para URLs de redes sociales enviadas como mensajes de texto"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        return  # Silenciosamente ignorar usuarios no autorizados
+
+    message = update.message
+    if not message or not message.text:
+        return
+
+    text = message.text.strip()
+
+    # Buscar URLs en el mensaje usando regex
+    url_pattern = r'https?://(?:[-\w.])+(?:[:\d]+)?(?:/(?:[\w/_.])*(?:\?(?:[\w&=%.])*)?(?:\#(?:[\w.])*)?)?'
+    urls = re.findall(url_pattern, text)
+
+    if not urls:
+        return  # No hay URLs en el mensaje
+
+    # Procesar la primera URL encontrada
+    url = urls[0]
+
+    # Verificar si es una URL de red social soportada
+    if not video_downloader.is_valid_social_url(url):
+        return  # No es una URL soportada, ignorar silenciosamente
+
+    logger.info(f"🎯 URL de red social detectada automáticamente: {url} de usuario {user_id}")
+
+    # Enviar mensaje de procesamiento automático
+    processing_msg = await update.message.reply_text(
+        "🎬 **Descargando video automáticamente...**\n\n"
+        f"🔗 **URL detectada:** {url[:50]}{'...' if len(url) > 50 else ''}\n\n"
+        "⏳ Procesando...",
+        parse_mode='Markdown'
+    )
+
+    try:
+        # Descargar el video
+        result = video_downloader.download_video(url)
+
+        if not result['success']:
+            await processing_msg.edit_text(
+                f"❌ **Error descargando video**\n\n"
+                f"**Detalles:** {result['error']}\n\n"
+                f"💡 También puedes usar `/download {url}` para intentar manualmente.",
+                parse_mode='Markdown'
+            )
+            return
+
+        # Información del video descargado
+        video_filepath = result['filepath']
+        title = result.get('title', 'Video sin título')
+        duration = result.get('duration', 0)
+        platform = result.get('platform', 'Desconocido')
+        file_size = result.get('file_size', 0)
+
+        logger.info(f"Video descargado exitosamente: {video_filepath}")
+
+        # Preparar información para enviar
+        caption = f"🎬 **{platform} Video** (Auto-descargado)\n\n"
+        caption += f"📹 **Título:** {title[:100]}{'...' if len(title) > 100 else ''}\n"
+        if duration > 0:
+            caption += f"⏱️ **Duración:** {duration}s\n"
+        caption += f"📏 **Tamaño:** {file_size:,} bytes\n\n"
+        caption += f"🔗 **Fuente:** {url[:30]}{'...' if len(url) > 30 else ''}"
+
+        # Enviar el video
+        try:
+            with open(video_filepath, 'rb') as video_file:
+                await context.bot.send_video(
+                    chat_id=update.effective_chat.id,
+                    video=video_file,
+                    caption=caption,
+                    supports_streaming=True,
+                    parse_mode='Markdown'
+                )
+
+            # Confirmar envío exitoso
+            await processing_msg.edit_text(
+                "✅ **Video descargado y enviado automáticamente** ✨\n\n"
+                f"🎬 **{platform} Video**\n"
+                f"📹 **{title[:50]}{'...' if len(title) > 50 else ''}**\n\n"
+                "🤖 Detección automática activada.",
+                parse_mode='Markdown'
+            )
+
+            logger.info(f"Video enviado exitosamente por detección automática a usuario {user_id}")
+
+        except Exception as send_error:
+            logger.error(f"Error enviando video por detección automática: {send_error}")
+            await processing_msg.edit_text(
+                "❌ **Error enviando video**\n\n"
+                f"El video se descargó pero no pudo enviarse.\n\n"
+                f"**Error:** {str(send_error)[:100]}...",
+                parse_mode='Markdown'
+            )
+
+        finally:
+            # Limpiar archivo temporal SIEMPRE
+            cleanup_success = video_downloader.cleanup_file(video_filepath)
+            if cleanup_success:
+                logger.info(f"Archivo temporal limpiado: {video_filepath}")
+            else:
+                logger.warning(f"No se pudo limpiar archivo temporal: {video_filepath}")
+
+    except Exception as e:
+        logger.error(f"Error crítico en detección automática para usuario {user_id}: {e}")
+        try:
+            await processing_msg.edit_text(
+                "❌ **Error en descarga automática**\n\n"
+                f"Ocurrió un error procesando la URL.\n\n"
+                f"💡 Usa `/download {url}` para intentar manualmente.",
+                parse_mode='Markdown'
+            )
+        except:
+            # Fallback si no se puede editar el mensaje
+            await update.message.reply_text(
+                "❌ **Error procesando URL automática**\n\n"
+                "Hubo un problema técnico.",
+                parse_mode='Markdown'
+            )
+
 async def process_video_generation(update: Update, context: ContextTypes.DEFAULT_TYPE,
                                  processing_msg, wavespeed: WavespeedAPI, request_id: str, prompt: str, model: str = 'ultra_fast'):
     """
