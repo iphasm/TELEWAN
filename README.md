@@ -7,7 +7,7 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
 - 📸 **Transformación de fotos a videos**: Convierte imágenes estáticas en videos animados
 - 🎬 **IA avanzada**: Usa múltiples modelos Wan 2.2 de Wavespeed (Ultra Fast, Fast, Quality, Text-to-Video)
 - 🤖 **Optimización automática de prompts**: IA analiza tus captions y los mejora automáticamente para mejores resultados
-- 📝 **Prompts inteligentes**: Utiliza el caption de la foto como descripción, con optimización automática opcional
+- 📝 **Prompts directos**: Utiliza el caption de la foto exactamente como descripción
 - 🚫 **Prevención de duplicados**: Sistema inteligente que evita procesamiento múltiple del mismo mensaje
 - ⚡ **Procesamiento ultra rápido**: Optimizado para respuestas rápidas con polling eficiente y robusto
 - ⏱️ **Videos de 8 segundos**: Duración extendida para mejores resultados
@@ -135,48 +135,6 @@ Cada video generado incluye como **caption el prompt completo** utilizado para c
 
 Esto te permite ver exactamente qué prompt se usó, especialmente útil cuando se optimiza automáticamente o cuando usas el prompt por defecto.
 
-### 🤖 **Optimización Automática de Prompts**
-
-El bot incluye **inteligencia artificial avanzada** para mejorar automáticamente tus captions usando el modelo **Molmo2 de WaveSpeed AI**.
-
-**Parámetros de optimización:**
-- **Modo**: `video` (optimización específica para generación de video)
-- **Estilo**: `realistic` (estilo realista con elementos cinematográficos)
-
-#### 🎯 **Cómo funciona:**
-- **Análisis inteligente**: El bot analiza tu imagen y caption para detectar si necesita mejoras
-- **Optimización contextual**: Usa tanto la imagen como tu texto original para generar prompts más precisos
-- **Mejora automática**: Agrega automáticamente elementos de iluminación, movimiento y composición
-- **Procesamiento silencioso**: La optimización ocurre en segundo plano sin interrupciones
-- **Modo video especializado**: Optimización específicamente diseñada para generación de video
-- **Manejo robusto de errores**: Si la optimización falla, continúa automáticamente con tu prompt original
-- **Indicador sutil**: Solo muestra "🎨 Video con prompt optimizado" cuando se completa exitosamente
-- **Mejor calidad**: Prompts optimizados generan videos de mejor calidad automáticamente
-
-#### 📝 **Cuándo se optimiza:**
-- ✅ Captions muy cortos (< 20 caracteres)
-- ✅ Palabras genéricas ("foto", "imagen", "test", "hola")
-- ✅ Descripciones simples que necesitan más detalle técnico
-
-#### 🎨 **Ejemplos de optimización:**
-
-| **Tu Caption** | **Optimizado automáticamente** |
-|---|---|
-| "una mujer hermosa" | "A stunning cinematic portrait of a beautiful woman with flowing hair, dramatic lighting, shallow depth of field, 4K resolution, film grain texture, atmospheric mood, hyper-realistic skin details, professional composition" |
-| "paisaje bonito" | "Breathtaking landscape with majestic mountains, crystal clear lake reflecting sunlight, golden hour lighting creating warm tones, volumetric clouds with dramatic shadows, hyper-realistic details, cinematic composition, 8K resolution" |
-| "foto" | "Professional cinematic shot with dramatic Rembrandt lighting, shallow depth of field creating beautiful bokeh background, film grain texture, atmospheric mood with subtle haze, 4K resolution, hyper-detailed composition" |
-
-#### ⚙️ **Control de optimización:**
-- **Activado por defecto**: La optimización automática está activada para todos los usuarios
-- **Comando `/optimize`**: Activa/desactiva la optimización automática
-- **Configuración por usuario**: Cada usuario puede elegir su preferencia
-
-#### 💡 **Tips para mejores resultados:**
-- **Sé específico**: Incluye detalles sobre movimiento, iluminación y estilo
-- **Deja que la IA ayude**: Captions cortos se optimizan automáticamente
-- **Combina ambos**: Usa captions detallados + optimización para resultados excepcionales
-- **Prompt completo**: El bot muestra el prompt optimizado completo para tu revisión
-
 ### 🔍 **Verificación Múltiple de Imágenes**
 
 El bot utiliza **4 métodos de detección** para asegurar que reconoce todo tipo de imágenes:
@@ -257,7 +215,6 @@ El bot incluye configuración personalizable en `config.py`:
 - `/textvideo [prompt]` - Genera video solo desde texto (sin imagen)
 - `/quality` - Activa modo 720p alta calidad para próximas imágenes
 - `/preview` - Activa modo 480p ultra rápido para próximas imágenes
-- `/optimize` - Activa/desactiva optimización automática de prompts con IA
 
 ## 📁 Estructura del proyecto
 

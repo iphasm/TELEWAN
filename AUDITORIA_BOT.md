@@ -39,6 +39,7 @@ Se realizó una auditoría completa del bot TELEWAN identificando **9 problemas 
 
 ### ✅ RESUELTO
 - **Directorio de almacenamiento**: Se creará automáticamente cuando sea necesario
+- **Optimizador de prompt eliminado**: Removido completamente según requerimiento del usuario
 
 ---
 
