@@ -1958,9 +1958,12 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     # Enviar mensaje de procesamiento
+    # Escapar caracteres problemáticos en la URL para Markdown
+    safe_url = url.replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+
     processing_msg = await update.message.reply_text(
         "🎬 **Descargando video...**\n\n"
-        f"🔗 **URL:** {url[:50]}{'...' if len(url) > 50 else ''}\n\n"
+        f"🔗 **URL:** {safe_url[:50]}{'...' if len(safe_url) > 50 else ''}\n\n"
         "🔧 **Método:** curl_cffi (avanzado) + yt-dlp fallback\n"
         "⏳ Esto puede tomar unos minutos...",
         parse_mode='Markdown'
@@ -1997,12 +2000,15 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.info(f"Video descargado exitosamente: {video_filepath}")
 
         # Preparar información para enviar
+        # Escapar caracteres problemáticos en la URL para Markdown
+        safe_url = url.replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+
         caption = f"🎬 **{platform} Video**\n\n"
         caption += f"📹 **Título:** {title[:100]}{'...' if len(title) > 100 else ''}\n"
         if duration > 0:
             caption += f"⏱️ **Duración:** {duration}s\n"
         caption += f"📏 **Tamaño:** {file_size:,} bytes\n\n"
-        caption += f"🔗 **Fuente:** {url[:30]}{'...' if len(url) > 30 else ''}"
+        caption += f"🔗 **Fuente:** {safe_url[:30]}{'...' if len(safe_url) > 30 else ''}"
 
         # Enviar el video
         try:
@@ -2094,9 +2100,12 @@ async def handle_social_url(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     logger.info(f"🎯 URL de red social detectada automáticamente: {url} de usuario {user_id}")
 
     # Enviar mensaje de procesamiento automático
+    # Escapar caracteres problemáticos en la URL para Markdown
+    safe_url = url.replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+
     processing_msg = await update.message.reply_text(
         "🎬 **Descargando video automáticamente...**\n\n"
-        f"🔗 **URL detectada:** {url[:50]}{'...' if len(url) > 50 else ''}\n\n"
+        f"🔗 **URL detectada:** {safe_url[:50]}{'...' if len(safe_url) > 50 else ''}\n\n"
         "🔧 **Método:** curl_cffi (avanzado) + yt-dlp fallback\n"
         "⏳ Procesando...",
         parse_mode='Markdown'
@@ -2110,7 +2119,7 @@ async def handle_social_url(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await processing_msg.edit_text(
                 f"❌ **Error descargando video**\n\n"
                 f"**Detalles:** {result['error']}\n\n"
-                f"💡 También puedes usar `/download {url}` para intentar manualmente.",
+                f"💡 También puedes usar `/download [URL]` para intentar manualmente.",
                 parse_mode='Markdown'
             )
             return
@@ -2125,12 +2134,15 @@ async def handle_social_url(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         logger.info(f"Video descargado exitosamente: {video_filepath}")
 
         # Preparar información para enviar
+        # Escapar caracteres problemáticos en la URL para Markdown
+        safe_url = url.replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+
         caption = f"🎬 **{platform} Video** (Auto-descargado)\n\n"
         caption += f"📹 **Título:** {title[:100]}{'...' if len(title) > 100 else ''}\n"
         if duration > 0:
             caption += f"⏱️ **Duración:** {duration}s\n"
         caption += f"📏 **Tamaño:** {file_size:,} bytes\n\n"
-        caption += f"🔗 **Fuente:** {url[:30]}{'...' if len(url) > 30 else ''}"
+        caption += f"🔗 **Fuente:** {safe_url[:30]}{'...' if len(safe_url) > 30 else ''}"
 
         # Enviar el video
         try:
@@ -2179,7 +2191,7 @@ async def handle_social_url(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await processing_msg.edit_text(
                 "❌ **Error en descarga automática**\n\n"
                 f"Ocurrió un error procesando la URL.\n\n"
-                f"💡 Usa `/download {url}` para intentar manualmente.",
+                f"💡 Usa `/download [URL]` para intentar manualmente.",
                 parse_mode='Markdown'
             )
         except:
