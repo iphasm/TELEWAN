@@ -1393,7 +1393,6 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                                             video=video_file,
                                                             caption=video_caption,
                                                             supports_streaming=True,
-                                                            parse_mode='Markdown'
                                                         )
 
                                                     video_sent_successfully = True
@@ -1958,15 +1957,12 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     # Enviar mensaje de procesamiento
-    # Escapar caracteres problemáticos en la URL para Markdown
-    safe_url = url.replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
-
+    # Usar formato simple sin Markdown para evitar problemas con URLs
     processing_msg = await update.message.reply_text(
-        "🎬 **Descargando video...**\n\n"
-        f"🔗 **URL:** {safe_url[:50]}{'...' if len(safe_url) > 50 else ''}\n\n"
-        "🔧 **Método:** curl_cffi (avanzado) + yt-dlp fallback\n"
-        "⏳ Esto puede tomar unos minutos...",
-        parse_mode='Markdown'
+        "🎬 Descargando video...\n\n"
+        f"🔗 URL: {url[:50]}{'...' if len(url) > 50 else ''}\n\n"
+        "🔧 Método: curl_cffi (avanzado) + yt-dlp fallback\n"
+        "⏳ Esto puede tomar unos minutos..."
     )
 
     try:
@@ -2000,15 +1996,14 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.info(f"Video descargado exitosamente: {video_filepath}")
 
         # Preparar información para enviar
-        # Escapar caracteres problemáticos en la URL para Markdown
-        safe_url = url.replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
-
-        caption = f"🎬 **{platform} Video**\n\n"
-        caption += f"📹 **Título:** {title[:100]}{'...' if len(title) > 100 else ''}\n"
+        # Usar formato simple sin Markdown para evitar problemas con URLs
+        caption = f"🎬 {platform} Video\n\n"
+        caption += f"📹 Título: {title[:100]}{'...' if len(title) > 100 else ''}\n"
         if duration > 0:
-            caption += f"⏱️ **Duración:** {duration}s\n"
-        caption += f"📏 **Tamaño:** {file_size:,} bytes\n\n"
-        caption += f"🔗 **Fuente:** {safe_url[:30]}{'...' if len(safe_url) > 30 else ''}"
+            caption += f"⏱️ Duración: {duration}s\n"
+        caption += f"📏 Tamaño: {file_size:,} bytes\n"
+        caption += f"🔧 Método usado: {method_used}\n\n"
+        caption += f"🔗 Fuente: {url[:30]}{'...' if len(url) > 30 else ''}"
 
         # Enviar el video
         try:
@@ -2018,18 +2013,16 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     video=video_file,
                     caption=caption,
                     supports_streaming=True,
-                    parse_mode='Markdown'
                 )
 
             # Confirmar envío exitoso
             method_used = result.get('method', 'desconocido')
             await processing_msg.edit_text(
-                "✅ **Video enviado exitosamente** ✨\n\n"
-                f"🎬 **{platform} Video**\n"
-                f"📹 **{title[:50]}{'...' if len(title) > 50 else ''}**\n"
-                f"🔧 **Método usado:** {method_used}\n\n"
-                "🗑️ Archivo temporal eliminado.",
-                parse_mode='Markdown'
+                "✅ Video enviado exitosamente ✨\n\n"
+                f"🎬 {platform} Video\n"
+                f"📹 {title[:50]}{'...' if len(title) > 50 else ''}\n"
+                f"🔧 Método usado: {method_used}\n\n"
+                "🗑️ Archivo temporal eliminado."
             )
 
             logger.info(f"Video enviado exitosamente a usuario {user_id} usando método {method_used}")
@@ -2100,15 +2093,12 @@ async def handle_social_url(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     logger.info(f"🎯 URL de red social detectada automáticamente: {url} de usuario {user_id}")
 
     # Enviar mensaje de procesamiento automático
-    # Escapar caracteres problemáticos en la URL para Markdown
-    safe_url = url.replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
-
+    # Usar formato simple sin Markdown para evitar problemas con URLs
     processing_msg = await update.message.reply_text(
-        "🎬 **Descargando video automáticamente...**\n\n"
-        f"🔗 **URL detectada:** {safe_url[:50]}{'...' if len(safe_url) > 50 else ''}\n\n"
-        "🔧 **Método:** curl_cffi (avanzado) + yt-dlp fallback\n"
-        "⏳ Procesando...",
-        parse_mode='Markdown'
+        "🎬 Descargando video automáticamente...\n\n"
+        f"🔗 URL detectada: {url[:50]}{'...' if len(url) > 50 else ''}\n\n"
+        "🔧 Método: curl_cffi (avanzado) + yt-dlp fallback\n"
+        "⏳ Procesando..."
     )
 
     try:
@@ -2134,15 +2124,14 @@ async def handle_social_url(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         logger.info(f"Video descargado exitosamente: {video_filepath}")
 
         # Preparar información para enviar
-        # Escapar caracteres problemáticos en la URL para Markdown
-        safe_url = url.replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
-
-        caption = f"🎬 **{platform} Video** (Auto-descargado)\n\n"
-        caption += f"📹 **Título:** {title[:100]}{'...' if len(title) > 100 else ''}\n"
+        # Usar formato simple sin Markdown para evitar problemas con URLs
+        caption = f"🎬 {platform} Video (Auto-descargado)\n\n"
+        caption += f"📹 Título: {title[:100]}{'...' if len(title) > 100 else ''}\n"
         if duration > 0:
-            caption += f"⏱️ **Duración:** {duration}s\n"
-        caption += f"📏 **Tamaño:** {file_size:,} bytes\n\n"
-        caption += f"🔗 **Fuente:** {safe_url[:30]}{'...' if len(safe_url) > 30 else ''}"
+            caption += f"⏱️ Duración: {duration}s\n"
+        caption += f"📏 Tamaño: {file_size:,} bytes\n"
+        caption += f"🔧 Método usado: {method_used}\n\n"
+        caption += f"🔗 Fuente: {url[:30]}{'...' if len(url) > 30 else ''}"
 
         # Enviar el video
         try:
@@ -2152,18 +2141,16 @@ async def handle_social_url(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     video=video_file,
                     caption=caption,
                     supports_streaming=True,
-                    parse_mode='Markdown'
                 )
 
             # Confirmar envío exitoso
             method_used = result.get('method', 'desconocido')
             await processing_msg.edit_text(
-                "✅ **Video descargado y enviado automáticamente** ✨\n\n"
-                f"🎬 **{platform} Video (Auto-descargado)**\n"
-                f"📹 **{title[:50]}{'...' if len(title) > 50 else ''}**\n"
-                f"🔧 **Método usado:** {method_used}\n\n"
-                "🤖 Detección automática activada.",
-                parse_mode='Markdown'
+                "✅ Video descargado y enviado automáticamente ✨\n\n"
+                f"🎬 {platform} Video (Auto-descargado)\n"
+                f"📹 {title[:50]}{'...' if len(title) > 50 else ''}\n"
+                f"🔧 Método usado: {method_used}\n\n"
+                "🤖 Detección automática activada."
             )
 
             logger.info(f"Video enviado exitosamente por detección automática a usuario {user_id}")
@@ -2263,7 +2250,6 @@ async def process_video_generation(update: Update, context: ContextTypes.DEFAULT
                                                         video=video_file,
                                                         caption=video_caption,
                                                         supports_streaming=True,
-                                                        parse_mode='Markdown'
                                                     )
 
                                                 video_sent_successfully = True
