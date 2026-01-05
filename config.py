@@ -64,7 +64,7 @@ class Config:
         "🔧 **Diagnóstico:**\n"
         "/debugfiles - Información sobre formatos de archivo soportados\n\n"
         "📥 **Descargas de Videos:**\n"
-        "• Envía directamente una URL de Facebook, Instagram, X/Twitter o Reddit\n"
+        "• Envía directamente una URL de Facebook, Instagram, X/Twitter, Reddit o TikTok\n"
         "• O usa: `/download [URL]` para descarga manual\n\n"
         "📝 **Cómo usar:**\n"
         "• Envía una foto con un caption descriptivo\n"

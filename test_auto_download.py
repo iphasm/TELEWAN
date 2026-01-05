@@ -13,7 +13,9 @@ SUPPORTED_PLATFORMS = {
     'instagr.am': 'Instagram',
     'twitter.com': 'X (Twitter)',
     'x.com': 'X (Twitter)',
-    'reddit.com': 'Reddit'
+    'reddit.com': 'Reddit',
+    'tiktok.com': 'TikTok',
+    'vm.tiktok.com': 'TikTok'
 }
 
 def detect_platform(url: str) -> str:
@@ -68,8 +70,9 @@ def test_detection():
         "https://twitter.com/user/status/123",
         "https://www.facebook.com/watch?v=456",
         "https://reddit.com/r/videos/comments/789/video/",
+        "https://tiktok.com/@user/video/123",
+        "https://vm.tiktok.com/abc123/",
         "https://youtube.com/watch?v=abc",  # No soportado
-        "https://tiktok.com/@user/video/123",  # No soportado
     ]
 
     print("🧪 Probando detección de plataformas:")

@@ -520,7 +520,9 @@ class VideoDownloader:
         'instagr.am': 'Instagram',
         'twitter.com': 'X (Twitter)',
         'x.com': 'X (Twitter)',
-        'reddit.com': 'Reddit'
+        'reddit.com': 'Reddit',
+        'tiktok.com': 'TikTok',
+        'vm.tiktok.com': 'TikTok'
     }
 
     def __init__(self):
@@ -560,10 +562,10 @@ class VideoDownloader:
         try:
             platform = self.detect_platform(url)
             if not platform:
-                return {
-                    'success': False,
-                    'error': 'Plataforma no soportada. Solo Facebook, Instagram, X/Twitter y Reddit.'
-                }
+            return {
+                'success': False,
+                'error': 'Plataforma no soportada. Solo Facebook, Instagram, X/Twitter, Reddit y TikTok.'
+            }
 
             logger.info(f"📥 Descargando video de {platform}: {url}")
 
@@ -1661,7 +1663,8 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "• 📘 Facebook\n"
             "• 📷 Instagram\n"
             "• 🐦 X (Twitter)\n"
-            "• 🔴 Reddit\n\n"
+            "• 🔴 Reddit\n"
+            "• 🎵 TikTok\n\n"
             "💡 Envía `/download [URL]` con un enlace válido",
             parse_mode='Markdown'
         )
