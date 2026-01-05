@@ -7,7 +7,7 @@ import asyncio
 from typing import Dict, Any
 
 from .types import (
-    BaseEvent, TelegramUpdateReceived, ImageProcessingStarted,
+    BaseEvent, TelegramUpdateReceived, ImageProcessingStarted, ImageProcessingCompleted,
     VideoGenerationStarted, VideoGenerationCompleted, VideoGenerationFailed,
     ProcessingError, HealthCheckEvent
 )
