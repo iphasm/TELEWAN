@@ -17,6 +17,9 @@ from telegram import Message
 class ImageDocumentFilter:
     """Filtro para documentos que son imágenes"""
     def __call__(self, update):
+        return self.check_update(update)
+
+    def check_update(self, update):
         message = update.message or update.channel_post
         if message and message.document:
             mime_type = message.document.mime_type
@@ -53,6 +56,9 @@ class ImageDocumentFilter:
 class StaticStickerFilter:
     """Filtro para stickers estáticos (no animados)"""
     def __call__(self, update):
+        return self.check_update(update)
+
+    def check_update(self, update):
         message = update.message or update.channel_post
         if message and message.sticker:
             return not message.sticker.is_animated
