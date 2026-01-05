@@ -2015,18 +2015,18 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     parse_mode='Markdown'
                 )
 
-        # Confirmar envío exitoso
-        method_used = result.get('method', 'desconocido')
-        await processing_msg.edit_text(
-            "✅ **Video enviado exitosamente** ✨\n\n"
-            f"🎬 **{platform} Video**\n"
-            f"📹 **{title[:50]}{'...' if len(title) > 50 else ''}**\n"
-            f"🔧 **Método usado:** {method_used}\n\n"
-            "🗑️ Archivo temporal eliminado.",
-            parse_mode='Markdown'
-        )
+            # Confirmar envío exitoso
+            method_used = result.get('method', 'desconocido')
+            await processing_msg.edit_text(
+                "✅ **Video enviado exitosamente** ✨\n\n"
+                f"🎬 **{platform} Video**\n"
+                f"📹 **{title[:50]}{'...' if len(title) > 50 else ''}**\n"
+                f"🔧 **Método usado:** {method_used}\n\n"
+                "🗑️ Archivo temporal eliminado.",
+                parse_mode='Markdown'
+            )
 
-        logger.info(f"Video enviado exitosamente a usuario {user_id} usando método {method_used}")
+            logger.info(f"Video enviado exitosamente a usuario {user_id} usando método {method_used}")
 
         except Exception as send_error:
             logger.error(f"Error enviando video a Telegram: {send_error}")
