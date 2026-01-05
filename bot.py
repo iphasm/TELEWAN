@@ -17,9 +17,34 @@ class ImageDocumentFilter:
         message = update.message or update.channel_post
         if message and message.document:
             mime_type = message.document.mime_type
+            filename = message.document.file_name or ""
+
+            # Log para debugging
+            logger.debug(f"Documento recibido - MIME: {mime_type}, Filename: {filename}")
+
             if mime_type and mime_type.startswith('image/'):
-                supported_formats = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
-                return mime_type.lower() in supported_formats
+                # Formatos de imagen comunes
+                supported_formats = [
+                    'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif',
+                    'image/bmp', 'image/tiff', 'image/tif', 'image/heic', 'image/heif',
+                    'image/svg+xml', 'image/x-icon'
+                ]
+
+                # También verificar por extensión del archivo si el MIME no está claro
+                image_extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif', '.heic', '.heif', '.svg', '.ico']
+                has_image_extension = any(filename.lower().endswith(ext) for ext in image_extensions)
+
+                mime_supported = mime_type.lower() in supported_formats
+                extension_supported = has_image_extension
+
+                result = mime_supported or extension_supported
+
+                if result:
+                    logger.info(f"✅ Documento de imagen aceptado - MIME: {mime_type}, Filename: {filename}")
+                else:
+                    logger.warning(f"❌ Documento de imagen rechazado - MIME: {mime_type}, Filename: {filename}")
+
+                return result
         return False
 
 class StaticStickerFilter:
@@ -591,14 +616,18 @@ def is_image_message(message) -> tuple[bool, str, str]:
         # Es un forward de una foto, pero no tenemos acceso directo a la foto
         return False, "", "❌ Para forwards de fotos, reenvía la imagen con el caption incluido."
 
-    # Si no se detectó ninguna imagen
+            # Si no se detectó ninguna imagen
     return False, "", (
         "❌ No se detectó ninguna imagen en tu mensaje.\n\n"
         "📸 **Formatos aceptados:**\n"
-        "• Fotos (directamente desde la cámara/galería)\n"
-        "• Documentos de imagen (JPG, PNG, WebP, GIF)\n"
-        "• Stickers estáticos\n\n"
-        "💡 Asegúrate de incluir un **caption descriptivo** con tu imagen."
+        "• **Fotos:** JPG, PNG, WebP, GIF (desde galería/cámara)\n"
+        "• **Documentos:** JPG, PNG, WebP, GIF, BMP, TIFF, HEIC, HEIF, SVG\n"
+        "• **Stickers:** Estáticos (no animados)\n\n"
+        "💡 **Tips para archivos:**\n"
+        "• Si envías como documento, asegúrate que tenga extensión de imagen\n"
+        "• Prueba reenviando la imagen como foto en lugar de documento\n"
+        "• Usa `/debugfiles` para más información\n\n"
+        "🎯 Incluye un **caption descriptivo** con tu imagen."
     )
 
 async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYPE, image_type: str = "photo") -> None:
@@ -612,6 +641,25 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             return
 
         user_id = message.from_user.id if message.from_user else "unknown"
+
+        # Logging detallado del mensaje recibido
+        logger.info(f"🎯 Procesando mensaje de tipo: {image_type}")
+        logger.info(f"   Usuario: {user_id}")
+        logger.info(f"   Tiene photo: {message.photo is not None}")
+        logger.info(f"   Tiene document: {message.document is not None}")
+        logger.info(f"   Tiene sticker: {message.sticker is not None}")
+
+        if message.document:
+            logger.info(f"   Document - MIME: {message.document.mime_type}, Filename: {message.document.file_name}")
+        if message.photo:
+            logger.info(f"   Photo - Cantidad de tamaños: {len(message.photo) if message.photo else 0}")
+        if message.sticker:
+            logger.info(f"   Sticker - Animado: {message.sticker.is_animated if message.sticker else 'N/A'}")
+
+        if message.caption:
+            logger.info(f"   Caption presente: '{message.caption[:50]}...'")
+        else:
+            logger.info(f"   Sin caption")
         chat_id = message.chat.id if message.chat else "unknown"
         message_id = message.message_id if hasattr(message, 'message_id') else "unknown"
 
@@ -678,7 +726,18 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                     elif image_type == "document":
                         if not message.document:
                             raise ValueError("No se encontró documento en el mensaje")
-                        photo_file = await context.bot.get_file(message.document.file_id)
+
+                        logger.info(f"📄 Procesando documento de imagen: {message.document.file_name}")
+                        logger.info(f"   MIME type: {message.document.mime_type}")
+                        logger.info(f"   File size: {message.document.file_size} bytes")
+                        logger.info(f"   File ID: {message.document.file_id[:20]}...")
+
+                        try:
+                            photo_file = await context.bot.get_file(message.document.file_id)
+                            logger.info(f"   File path obtenido: {photo_file.file_path[:50]}...")
+                        except Exception as file_error:
+                            logger.error(f"❌ Error obteniendo file del documento: {file_error}")
+                            raise ValueError(f"Error obteniendo archivo del documento: {str(file_error)}")
                     elif image_type == "sticker":
                         if not message.sticker:
                             raise ValueError("No se encontró sticker en el mensaje")
@@ -1190,6 +1249,37 @@ async def handle_optimize(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
 
     logger.info(f"Usuario {user_id} cambió optimización automática a: {new_state}")
+
+async def handle_debug_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador para el comando /debugfiles - diagnosticar tipos de archivos"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
+        return
+
+    supported_info = """
+🔍 **Diagnóstico de Archivos Soportados**
+
+**Formatos de imagen aceptados:**
+• **Como foto directa:** JPG, PNG, WebP, GIF
+• **Como documento:** JPG, PNG, WebP, GIF, BMP, TIFF, HEIC, HEIF, SVG, ICO
+
+**Cómo enviar imágenes:**
+1. **Como foto:** Selecciona desde galería/cámara
+2. **Como archivo:** Adjunta como documento
+
+**Si tu imagen no funciona:**
+• Verifica que sea un formato soportado
+• Intenta reenviarla como foto en lugar de documento
+• Usa /debugfiles para diagnóstico
+
+📝 **Nota:** Los documentos con extensión de imagen (.jpg, .png, etc.) también son aceptados.
+"""
+
+    await update.message.reply_text(supported_info, parse_mode='Markdown')
+    logger.info(f"Usuario {user_id} solicitó diagnóstico de archivos")
 
 async def handle_lastvideo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejador para el comando /lastvideo - recuperar el último video procesado"""

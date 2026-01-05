@@ -61,6 +61,8 @@ class Config:
         "/balance - Consultar saldo disponible en Wavespeed\n\n"
         "🔄 **Recuperación:**\n"
         "/lastvideo - Recuperar el último video procesado\n\n"
+        "🔧 **Diagnóstico:**\n"
+        "/debugfiles - Información sobre formatos de archivo soportados\n\n"
         "📝 **Cómo usar:**\n"
         "• Envía una foto con un caption descriptivo\n"
         "• El bot genera un video basado en tu descripción\n"
