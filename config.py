@@ -63,6 +63,8 @@ class Config:
         "/lastvideo - Recuperar el último video procesado\n\n"
         "🔧 **Diagnóstico:**\n"
         "/debugfiles - Información sobre formatos de archivo soportados\n\n"
+        "📥 **Descargas:**\n"
+        "/download [URL] - Descargar video de redes sociales\n\n"
         "📝 **Cómo usar:**\n"
         "• Envía una foto con un caption descriptivo\n"
         "• El bot genera un video basado en tu descripción\n"

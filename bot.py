@@ -4,7 +4,10 @@ import time
 import io
 import os
 import uuid
+import re
+import subprocess
 from datetime import datetime
+from urllib.parse import urlparse
 # Flask removido - ahora usamos FastAPI (ver fastapi_app.py)
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -470,6 +473,170 @@ class WavespeedAPI:
                 'error': str(type(e).__name__),
                 'message': f'Error interno: {str(e)}'
             }
+
+
+class VideoDownloader:
+    """Clase para descargar videos de redes sociales"""
+
+    SUPPORTED_PLATFORMS = {
+        'facebook.com': 'Facebook',
+        'fb.com': 'Facebook',
+        'instagram.com': 'Instagram',
+        'instagr.am': 'Instagram',
+        'twitter.com': 'X (Twitter)',
+        'x.com': 'X (Twitter)',
+        'reddit.com': 'Reddit'
+    }
+
+    def __init__(self):
+        self.temp_dir = Config.VOLUME_PATH
+
+    def detect_platform(self, url: str) -> str:
+        """Detecta la plataforma de redes sociales desde la URL"""
+        try:
+            domain = urlparse(url).netloc.lower()
+            for platform_domain, platform_name in self.SUPPORTED_PLATFORMS.items():
+                if platform_domain in domain:
+                    return platform_name
+            return None
+        except Exception as e:
+            logger.error(f"Error detectando plataforma para URL {url}: {e}")
+            return None
+
+    def is_valid_social_url(self, url: str) -> bool:
+        """Verifica si la URL es de una red social soportada"""
+        platform = self.detect_platform(url)
+        return platform is not None
+
+    def download_video(self, url: str) -> dict:
+        """
+        Descarga un video de redes sociales usando yt-dlp
+
+        Returns:
+            dict: {
+                'success': bool,
+                'filepath': str (si éxito),
+                'title': str,
+                'duration': int,
+                'platform': str,
+                'error': str (si fallo)
+            }
+        """
+        try:
+            platform = self.detect_platform(url)
+            if not platform:
+                return {
+                    'success': False,
+                    'error': 'Plataforma no soportada. Solo Facebook, Instagram, X/Twitter y Reddit.'
+                }
+
+            logger.info(f"📥 Descargando video de {platform}: {url}")
+
+            # Generar nombre único para el archivo
+            video_id = str(uuid.uuid4())[:8]
+            output_template = os.path.join(self.temp_dir, f'social_video_{video_id}.%(ext)s')
+
+            # Comando yt-dlp optimizado para videos sociales
+            cmd = [
+                'yt-dlp',
+                '--no-check-certificates',
+                '--no-playlist',
+                '--max-filesize', '100M',  # Límite de 100MB
+                '--format', 'best[height<=720]',  # Calidad máxima 720p
+                '--output', output_template,
+                '--print', '%(title)s',
+                '--print', '%(duration)s',
+                '--print', '%(ext)s',
+                url
+            ]
+
+            logger.info(f"Ejecutando comando: {' '.join(cmd)}")
+
+            # Ejecutar yt-dlp
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120  # 2 minutos timeout
+            )
+
+            if result.returncode != 0:
+                logger.error(f"Error en yt-dlp: {result.stderr}")
+                return {
+                    'success': False,
+                    'error': f'Error descargando video: {result.stderr[:200]}...'
+                }
+
+            # Parsear la salida
+            output_lines = result.stdout.strip().split('\n')
+            if len(output_lines) < 3:
+                return {
+                    'success': False,
+                    'error': 'No se pudo obtener información del video'
+                }
+
+            title = output_lines[0].strip()
+            duration_str = output_lines[1].strip()
+            extension = output_lines[2].strip()
+
+            try:
+                duration = int(float(duration_str))
+            except:
+                duration = 0
+
+            # Encontrar el archivo descargado
+            video_filename = f'social_video_{video_id}.{extension}'
+            video_filepath = os.path.join(self.temp_dir, video_filename)
+
+            if not os.path.exists(video_filepath):
+                return {
+                    'success': False,
+                    'error': 'Video descargado pero archivo no encontrado'
+                }
+
+            # Verificar tamaño del archivo
+            file_size = os.path.getsize(video_filepath)
+            logger.info(f"✅ Video descargado: {video_filepath} ({file_size:,} bytes)")
+
+            return {
+                'success': True,
+                'filepath': video_filepath,
+                'title': title,
+                'duration': duration,
+                'platform': platform,
+                'file_size': file_size
+            }
+
+        except subprocess.TimeoutExpired:
+            logger.error("Timeout descargando video")
+            return {
+                'success': False,
+                'error': 'Timeout: La descarga tomó demasiado tiempo (máx 2 minutos)'
+            }
+
+        except Exception as e:
+            logger.error(f"Error descargando video: {e}")
+            return {
+                'success': False,
+                'error': f'Error interno: {str(e)}'
+            }
+
+    def cleanup_file(self, filepath: str) -> bool:
+        """Elimina un archivo del sistema de archivos"""
+        try:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                logger.info(f"🗑️ Archivo eliminado: {filepath}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error eliminando archivo {filepath}: {e}")
+            return False
+
+
+# Instancia global del downloader
+video_downloader = VideoDownloader()
+
 
     def get_available_models(self) -> dict:
         """
@@ -1449,6 +1616,150 @@ async def handle_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             # Fallback si no se puede editar el mensaje
             await update.message.reply_text(
                 "❌ **Error consultando balance**\n\n"
+                "Hubo un problema técnico. Inténtalo de nuevo.",
+                parse_mode='Markdown'
+            )
+
+async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador para el comando /download - descargar videos de redes sociales"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
+        return
+
+    # Verificar que se proporcionó una URL
+    if not context.args:
+        await update.message.reply_text(
+            "❌ **Uso incorrecto**\n\n"
+            "💡 **Uso correcto:** `/download [URL]`\n\n"
+            "**Ejemplos:**\n"
+            "`/download https://www.instagram.com/p/ABC123/`\n"
+            "`/download https://twitter.com/user/status/123`\n"
+            "`/download https://www.facebook.com/watch?v=456`\n"
+            "`/download https://reddit.com/r/videos/comments/789/video/`",
+            parse_mode='Markdown'
+        )
+        return
+
+    url = ' '.join(context.args).strip()
+
+    # Validar que sea una URL
+    if not url.startswith(('http://', 'https://')):
+        await update.message.reply_text(
+            "❌ **URL inválida**\n\n"
+            "La URL debe comenzar con `http://` o `https://`",
+            parse_mode='Markdown'
+        )
+        return
+
+    # Verificar que sea una plataforma soportada
+    if not video_downloader.is_valid_social_url(url):
+        await update.message.reply_text(
+            "❌ **Plataforma no soportada**\n\n"
+            "**Plataformas soportadas:**\n"
+            "• 📘 Facebook\n"
+            "• 📷 Instagram\n"
+            "• 🐦 X (Twitter)\n"
+            "• 🔴 Reddit\n\n"
+            "💡 Envía `/download [URL]` con un enlace válido",
+            parse_mode='Markdown'
+        )
+        return
+
+    # Enviar mensaje de procesamiento
+    processing_msg = await update.message.reply_text(
+        "🎬 **Descargando video...**\n\n"
+        f"🔗 **URL:** {url[:50]}{'...' if len(url) > 50 else ''}\n\n"
+        "⏳ Esto puede tomar unos minutos...",
+        parse_mode='Markdown'
+    )
+
+    try:
+        # Descargar el video
+        logger.info(f"Usuario {user_id} solicitó descarga de: {url}")
+        result = video_downloader.download_video(url)
+
+        if not result['success']:
+            await processing_msg.edit_text(
+                f"❌ **Error descargando video**\n\n"
+                f"**Detalles:** {result['error']}\n\n"
+                f"💡 Verifica que la URL sea correcta y el video esté disponible.",
+                parse_mode='Markdown'
+            )
+            return
+
+        # Información del video descargado
+        video_filepath = result['filepath']
+        title = result.get('title', 'Video sin título')
+        duration = result.get('duration', 0)
+        platform = result.get('platform', 'Desconocido')
+        file_size = result.get('file_size', 0)
+
+        logger.info(f"Video descargado exitosamente: {video_filepath}")
+
+        # Preparar información para enviar
+        caption = f"🎬 **{platform} Video**\n\n"
+        caption += f"📹 **Título:** {title[:100]}{'...' if len(title) > 100 else ''}\n"
+        if duration > 0:
+            caption += f"⏱️ **Duración:** {duration}s\n"
+        caption += f"📏 **Tamaño:** {file_size:,} bytes\n\n"
+        caption += f"🔗 **Fuente:** {url[:30]}{'...' if len(url) > 30 else ''}"
+
+        # Enviar el video
+        try:
+            with open(video_filepath, 'rb') as video_file:
+                await context.bot.send_video(
+                    chat_id=update.effective_chat.id,
+                    video=video_file,
+                    caption=caption,
+                    supports_streaming=True,
+                    parse_mode='Markdown'
+                )
+
+            # Confirmar envío exitoso
+            await processing_msg.edit_text(
+                "✅ **Video enviado exitosamente** ✨\n\n"
+                f"🎬 **{platform} Video**\n"
+                f"📹 **{title[:50]}{'...' if len(title) > 50 else ''}**\n\n"
+                "🗑️ Archivo temporal eliminado.",
+                parse_mode='Markdown'
+            )
+
+            logger.info(f"Video enviado exitosamente a usuario {user_id}")
+
+        except Exception as send_error:
+            logger.error(f"Error enviando video a Telegram: {send_error}")
+            await processing_msg.edit_text(
+                "❌ **Error enviando video**\n\n"
+                f"El video se descargó pero no pudo enviarse a Telegram.\n\n"
+                f"**Error:** {str(send_error)[:100]}...",
+                parse_mode='Markdown'
+            )
+
+        finally:
+            # Limpiar archivo temporal SIEMPRE
+            cleanup_success = video_downloader.cleanup_file(video_filepath)
+            if cleanup_success:
+                logger.info(f"Archivo temporal limpiado: {video_filepath}")
+            else:
+                logger.warning(f"No se pudo limpiar archivo temporal: {video_filepath}")
+
+    except Exception as e:
+        logger.error(f"Error crítico en comando /download para usuario {user_id}: {e}")
+        try:
+            await processing_msg.edit_text(
+                "❌ **Error interno**\n\n"
+                f"Ocurrió un error procesando tu solicitud.\n\n"
+                f"**Detalles técnicos:** {str(e)}\n\n"
+                f"💡 Inténtalo de nuevo en unos minutos.",
+                parse_mode='Markdown'
+            )
+        except:
+            # Fallback si no se puede editar el mensaje
+            await update.message.reply_text(
+                "❌ **Error procesando descarga**\n\n"
                 "Hubo un problema técnico. Inténtalo de nuevo.",
                 parse_mode='Markdown'
             )

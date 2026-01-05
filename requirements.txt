@@ -16,4 +16,8 @@ uvicorn[standard]>=0.24.0
 # Redis dependencies (Fase 3 - preparado)
 redis>=5.0.0
 
+# Video downloading dependencies
+yt-dlp>=2023.12.30
+ffmpeg-python>=0.2.0
+
 
