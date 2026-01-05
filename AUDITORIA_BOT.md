@@ -39,7 +39,7 @@ Se realizó una auditoría completa del bot TELEWAN identificando **9 problemas 
 
 ### ✅ RESUELTO
 - **Directorio de almacenamiento**: Se creará automáticamente cuando sea necesario
-- **Optimizador de prompt eliminado**: Removido completamente según requerimiento del usuario
+- **Nuevo optimizador implementado**: WaveSpeedAI v3 con campo 'text' y modo 'video'
 
 ---
 

@@ -7,7 +7,7 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
 - 📸 **Transformación de fotos a videos**: Convierte imágenes estáticas en videos animados
 - 🎬 **IA avanzada**: Usa múltiples modelos Wan 2.2 de Wavespeed (Ultra Fast, Fast, Quality, Text-to-Video)
 - 🤖 **Optimización automática de prompts**: IA analiza tus captions y los mejora automáticamente para mejores resultados
-- 📝 **Prompts directos**: Utiliza el caption de la foto exactamente como descripción
+- 📝 **Prompts inteligentes**: Utiliza el caption de la foto como descripción, con optimización automática opcional
 - 🚫 **Prevención de duplicados**: Sistema inteligente que evita procesamiento múltiple del mismo mensaje
 - ⚡ **Procesamiento ultra rápido**: Optimizado para respuestas rápidas con polling eficiente y robusto
 - ⏱️ **Videos de 8 segundos**: Duración extendida para mejores resultados
@@ -135,6 +135,48 @@ Cada video generado incluye como **caption el prompt completo** utilizado para c
 
 Esto te permite ver exactamente qué prompt se usó, especialmente útil cuando se optimiza automáticamente o cuando usas el prompt por defecto.
 
+### 🤖 **Optimización Automática de Prompts (Nueva API v3)**
+
+El bot incluye **inteligencia artificial avanzada** usando la nueva API v3 de WaveSpeedAI para mejorar automáticamente tus captions.
+
+**Parámetros de optimización:**
+- **API**: Nueva WaveSpeedAI v3 Prompt Optimizer
+- **Modo**: `video` (optimización específica para generación de video)
+- **Estilo**: `default` (equilibrado para mejores resultados)
+
+#### 🎯 **Cómo funciona:**
+- **Análisis inteligente**: El bot analiza tu imagen y caption
+- **Optimización contextual**: Usa tanto la imagen como tu texto original para generar prompts más precisos
+- **Nueva API v3**: Utiliza el endpoint más reciente de WaveSpeedAI
+- **Campo "text"**: Envía el caption del usuario directamente al optimizer
+- **Procesamiento silencioso**: La optimización ocurre en segundo plano sin interrupciones
+- **Manejo robusto de errores**: Si la optimización falla, continúa automáticamente con tu prompt original
+- **Indicador sutil**: Solo muestra "🎨 Video con prompt optimizado" cuando se completa exitosamente
+- **Mejor calidad**: Prompts optimizados generan videos de mejor calidad automáticamente
+
+#### 📝 **Cuándo se optimiza:**
+- ✅ Captions con texto descriptivo
+- ✅ Cuando la optimización puede mejorar la calidad del video
+- ✅ Activado manualmente con el comando `/optimize`
+
+#### 🎨 **Ejemplos de optimización con nueva API:**
+
+| **Tu Caption** | **Optimizado automáticamente** |
+|---|---|
+| "A woman, city walk, fashion" | "A beautiful woman walking confidently through a bustling city street, wearing stylish fashion, cinematic shot with dynamic camera movement, dramatic lighting, hyper-detailed, 4K resolution" |
+| "sunset landscape" | "Breathtaking sunset landscape with vibrant orange and purple sky, majestic mountains silhouetted against the horizon, golden light casting long shadows, cinematic composition, atmospheric mood" |
+
+#### ⚙️ **Control de optimización:**
+- **Desactivado por defecto**: Para mantener control total sobre tus prompts
+- **Comando `/optimize`**: Activa/desactiva la optimización automática
+- **Configuración por usuario**: Cada usuario puede elegir su preferencia
+
+#### 💡 **Tips para mejores resultados:**
+- **Sé descriptivo**: Incluye detalles sobre movimiento, iluminación y estilo
+- **Activa la optimización**: Usa `/optimize` para mejorar automáticamente tus captions
+- **Combina ambos**: Usa captions detallados + optimización para resultados excepcionales
+- **Prompt completo**: El bot muestra el prompt optimizado completo para tu revisión
+
 ### 🔍 **Verificación Múltiple de Imágenes**
 
 El bot utiliza **4 métodos de detección** para asegurar que reconoce todo tipo de imágenes:
@@ -215,6 +257,7 @@ El bot incluye configuración personalizable en `config.py`:
 - `/textvideo [prompt]` - Genera video solo desde texto (sin imagen)
 - `/quality` - Activa modo 720p alta calidad para próximas imágenes
 - `/preview` - Activa modo 480p ultra rápido para próximas imágenes
+- `/optimize` - Activar/desactivar optimización automática de prompts con IA
 
 ## 📁 Estructura del proyecto
 

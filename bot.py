@@ -268,6 +268,50 @@ class WavespeedAPI:
         """
         return self.generate_video(prompt, image_url, model=model)
 
+    def optimize_prompt_v3(self, image_url: str, text: str, mode: str = "video", style: str = "default") -> dict:
+        """
+        Optimiza un prompt usando la nueva API v3 de WaveSpeedAI
+
+        Args:
+            image_url: URL de la imagen a analizar
+            text: Texto del prompt a optimizar
+            mode: Modo de optimización ('video' o 'image')
+            style: Estilo de optimización ('default', 'realistic', 'cinematic')
+        """
+        endpoint = f"{self.base_url}/api/v3/wavespeed-ai/prompt-optimizer"
+
+        payload = {
+            "enable_sync_mode": False,
+            "image": image_url,
+            "mode": mode,
+            "style": style,
+            "text": text
+        }
+
+        logger.info(f"Calling new prompt optimizer v3: image={image_url[:50]}..., text='{text}', mode={mode}, style={style}")
+
+        try:
+            response = requests.post(endpoint, json=payload, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error en nuevo prompt optimizer v3: {e}")
+            raise
+
+    def get_prompt_optimizer_result(self, request_id: str) -> dict:
+        """
+        Obtiene el resultado de una tarea de optimización de prompt
+        """
+        endpoint = f"{self.base_url}/api/v3/predictions/{request_id}/result"
+
+        try:
+            response = requests.get(endpoint, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error obteniendo resultado del prompt optimizer: {e}")
+            raise
+
 
     def get_available_models(self) -> dict:
         """
@@ -303,6 +347,72 @@ class WavespeedAPI:
                 'speed': 'ultra_fast'
             }
         }
+
+def optimize_user_prompt_v3(image_url: str, text: str, mode: str = "video", style: str = "default") -> str:
+    """
+    Optimiza un prompt usando la nueva API v3 de WaveSpeedAI
+    """
+    try:
+        wavespeed = WavespeedAPI()
+
+        # Iniciar optimización con la nueva API
+        result = wavespeed.optimize_prompt_v3(
+            image_url=image_url,
+            text=text,
+            mode=mode,
+            style=style
+        )
+
+        if result.get('data') and result['data'].get('id'):
+            request_id = result['data']['id']
+            logger.info(f"New prompt optimization started. Request ID: {request_id}")
+
+            # Esperar resultado (máximo 30 segundos)
+            max_attempts = 300  # 30 segundos con polling de 0.1s
+            attempt = 0
+
+            while attempt < max_attempts:
+                try:
+                    status_result = wavespeed.get_prompt_optimizer_result(request_id)
+
+                    if status_result.get('data'):
+                        task_data = status_result['data']
+                        status = task_data.get('status')
+
+                        if status == 'completed':
+                            if task_data.get('outputs') and len(task_data['outputs']) > 0:
+                                optimized_text = task_data['outputs'][0]
+                                logger.info(f"New optimizer result: {optimized_text[:100]}...")
+                                logger.info(f"Original text: '{text}'")
+                                logger.info(f"Optimization completed in {attempt * 0.1:.1f} seconds")
+                                return optimized_text
+                            else:
+                                logger.warning("New prompt optimization completed but no outputs")
+                                break
+
+                        elif status == 'failed':
+                            error_msg = task_data.get('error', 'Unknown error')
+                            logger.error(f"New prompt optimization failed: {error_msg}")
+                            break
+
+                    attempt += 1
+                    time.sleep(0.1)
+
+                except Exception as poll_error:
+                    logger.error(f"Error polling new optimizer status: {poll_error}")
+                    attempt += 1
+                    time.sleep(0.1)
+
+            logger.warning("New prompt optimization timed out or failed, using original text")
+            return text
+
+        else:
+            logger.error(f"Failed to start new prompt optimization. API Response: {result}")
+            return text
+
+    except Exception as e:
+        logger.error(f"Critical error in new prompt optimization: {e}")
+        return text
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejador del comando /start"""
@@ -430,8 +540,63 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.info(f"   Prompt preview: {DEFAULT_PROMPT[:100]}...")
         else:
             original_caption = message.caption
-            prompt = original_caption
-            logger.info(f"Usando caption personalizado: '{prompt[:50]}...'")
+
+            # Verificar si el usuario quiere optimización automática
+            auto_optimize_enabled = context.user_data.get('auto_optimize', False)  # Por defecto desactivado
+            prompt_optimized = False
+
+            if auto_optimize_enabled and original_caption and len(original_caption.strip()) > 0:
+                try:
+                    # Obtener URL de la imagen para el optimizer
+                    if image_type == "photo":
+                        if not message.photo or len(message.photo) == 0:
+                            raise ValueError("No se encontraron fotos en el mensaje")
+                        photo = message.photo[-1]
+                        photo_file = await context.bot.get_file(photo.file_id)
+                    elif image_type == "document":
+                        if not message.document:
+                            raise ValueError("No se encontró documento en el mensaje")
+                        photo_file = await context.bot.get_file(message.document.file_id)
+                    elif image_type == "sticker":
+                        if not message.sticker:
+                            raise ValueError("No se encontró sticker en el mensaje")
+                        photo_file = await context.bot.get_file(message.sticker.file_id)
+                    else:
+                        prompt = original_caption
+                        await processing_msg.edit_text("❌ Tipo de imagen no soportado.")
+                        context.user_data[processing_key] = False
+                        logger.info(f"🧹 Flag limpiado por tipo imagen no soportado: chat {chat_id}")
+                        return
+
+                    # Construir URL correcta para la imagen
+                    if photo_file.file_path.startswith('http'):
+                        photo_file_url = photo_file.file_path
+                    else:
+                        photo_file_url = f"https://api.telegram.org/file/bot{Config.TELEGRAM_BOT_TOKEN}/{photo_file.file_path}"
+
+                    # Optimizar el prompt usando la nueva API v3
+                    optimized_prompt = optimize_user_prompt_v3(
+                        image_url=photo_file_url,
+                        text=original_caption,
+                        mode="video",
+                        style="default"
+                    )
+
+                    if optimized_prompt and optimized_prompt != original_caption:
+                        prompt = optimized_prompt
+                        prompt_optimized = True
+                        logger.info(f"Prompt optimizado con nueva API v3: '{original_caption}' → '{optimized_prompt[:100]}...'")
+                    else:
+                        prompt = original_caption
+                        logger.info(f"Optimización no aplicable, usando caption original: '{original_caption}'")
+
+                except Exception as optimizer_error:
+                    prompt = original_caption
+                    logger.error(f"Error en optimización con nueva API v3: {optimizer_error}")
+                    logger.info(f"Continuando con caption original: '{original_caption}'")
+            else:
+                prompt = original_caption
+                logger.info(f"Usando caption personalizado (sin optimización): '{prompt[:50]}...'")
 
         # Múltiples métodos de verificación de imagen
         is_image, image_type, error_msg = is_image_message(message)
@@ -577,6 +742,8 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
                                             # Preparar el caption del video con el prompt utilizado
                                             video_caption = f"🎬 **Prompt utilizado:**\n{prompt}"
+                                            if prompt_optimized:
+                                                video_caption += "\n\n🎨 *Prompt optimizado automáticamente*"
 
                                             # Enviar el video desde el archivo guardado
                                             with open(video_filepath, 'rb') as video_file:
@@ -590,6 +757,8 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
                                             # Confirmar envío exitoso
                                             success_msg = "✅ ¡Video enviado exitosamente!"
+                                            if prompt_optimized:
+                                                success_msg += "\n\n🎨 Video con prompt optimizado"
                                             await processing_msg.edit_text(success_msg)
                                             logger.info(f"Video sent successfully to user {update.effective_chat.id}")
                                             video_sent = True
@@ -719,6 +888,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /preview - Modo preview rápida (480p ultra fast)
 /quality - Videos de alta calidad (720p)
 /textvideo - Generar video solo desde texto
+/optimize - Activar/desactivar optimización automática de prompts
 
 📸 **Cómo generar videos:**
 - Envía una foto con un caption descriptivo
@@ -860,6 +1030,42 @@ async def handle_preview_video(update: Update, context: ContextTypes.DEFAULT_TYP
         parse_mode='Markdown'
     )
 
+async def handle_optimize(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador para el comando /optimize - activar/desactivar optimización automática de prompts"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(
+            "❌ Lo siento, este bot es privado y solo puede ser usado por usuarios autorizados."
+        )
+        return
+
+    # Toggle optimización automática (por defecto desactivado)
+    current_state = context.user_data.get('auto_optimize', False)
+    context.user_data['auto_optimize'] = not current_state
+    new_state = context.user_data['auto_optimize']
+
+    if new_state:
+        await update.message.reply_text(
+            "🤖 **Optimización Automática ACTIVADA** ✨\n\n"
+            "Ahora tus captions serán automáticamente mejorados usando IA cuando:\n"
+            "• Contengan texto descriptivo\n"
+            "• La optimización pueda mejorar la calidad del video\n\n"
+            "🎨 **Mejora:** Tus videos tendrán mejor calidad automáticamente.\n\n"
+            "💡 Usa `/optimize` nuevamente para desactivar.",
+            parse_mode='Markdown'
+        )
+    else:
+        await update.message.reply_text(
+            "🚫 **Optimización Automática DESACTIVADA**\n\n"
+            "Ahora usarás tus captions exactamente como los escribas.\n\n"
+            "💡 **Tip:** Usa `/optimize` nuevamente para activar la optimización automática.",
+            parse_mode='Markdown'
+        )
+
+    logger.info(f"Usuario {user_id} cambió optimización automática a: {new_state}")
+
 async def process_video_generation(update: Update, context: ContextTypes.DEFAULT_TYPE,
                                  processing_msg, wavespeed: WavespeedAPI, request_id: str, prompt: str):
     """
@@ -919,6 +1125,8 @@ async def process_video_generation(update: Update, context: ContextTypes.DEFAULT
 
                                         # Confirmar envío exitoso
                                         success_msg = "✅ ¡Video enviado exitosamente!"
+                                        if prompt_optimized:
+                                            success_msg += "\n\n🎨 Video con prompt optimizado"
                                         await processing_msg.edit_text(success_msg)
                                         logger.info(f"Video sent successfully to user {update.effective_chat.id}")
                                         video_sent = True
@@ -1037,6 +1245,7 @@ def main() -> None:
         application.add_handler(CommandHandler("textvideo", handle_text_video))
         application.add_handler(CommandHandler("quality", handle_quality_video))
         application.add_handler(CommandHandler("preview", handle_preview_video))
+        application.add_handler(CommandHandler("optimize", handle_optimize))
         # Múltiples handlers para diferentes tipos de imágenes
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
         application.add_handler(MessageHandler(image_document_filter, handle_document_image))
@@ -1120,6 +1329,7 @@ def main() -> None:
         application.add_handler(CommandHandler("textvideo", handle_text_video))
         application.add_handler(CommandHandler("quality", handle_quality_video))
         application.add_handler(CommandHandler("preview", handle_preview_video))
+        application.add_handler(CommandHandler("optimize", handle_optimize))
         # Múltiples handlers para diferentes tipos de imágenes
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
         application.add_handler(MessageHandler(image_document_filter, handle_document_image))
