@@ -474,6 +474,41 @@ class WavespeedAPI:
                 'message': f'Error interno: {str(e)}'
             }
 
+    def get_available_models(self) -> dict:
+        """
+        Retorna información sobre los modelos disponibles
+        """
+        return {
+            'ultra_fast': {
+                'name': 'Ultra Fast 480p',
+                'description': 'Video rápido en 480p, duración máxima 8s',
+                'duration_max': 8,
+                'resolution': '480p',
+                'speed': 'ultra_fast'
+            },
+            'fast': {
+                'name': 'Fast 480p',
+                'description': 'Video rápido en 480p con mejor calidad',
+                'duration_max': 8,
+                'resolution': '480p',
+                'speed': 'fast'
+            },
+            'quality': {
+                'name': 'Quality 720p',
+                'description': 'Video de alta calidad en 720p',
+                'duration_max': 8,
+                'resolution': '720p',
+                'speed': 'quality'
+            },
+            'text_to_video': {
+                'name': 'Text to Video 480p',
+                'description': 'Genera video solo desde texto (sin imagen)',
+                'duration_max': 8,
+                'resolution': '480p',
+                'speed': 'ultra_fast'
+            }
+        }
+
 
 class VideoDownloader:
     """Clase para descargar videos de redes sociales"""
@@ -636,42 +671,6 @@ class VideoDownloader:
 
 # Instancia global del downloader
 video_downloader = VideoDownloader()
-
-
-    def get_available_models(self) -> dict:
-        """
-        Retorna información sobre los modelos disponibles
-        """
-        return {
-            'ultra_fast': {
-                'name': 'Ultra Fast 480p',
-                'description': 'Video rápido en 480p, duración máxima 8s',
-                'duration_max': 8,
-                'resolution': '480p',
-                'speed': 'ultra_fast'
-            },
-            'fast': {
-                'name': 'Fast 480p',
-                'description': 'Video rápido en 480p con mejor calidad',
-                'duration_max': 8,
-                'resolution': '480p',
-                'speed': 'fast'
-            },
-            'quality': {
-                'name': 'Quality 720p',
-                'description': 'Video de alta calidad en 720p',
-                'duration_max': 8,
-                'resolution': '720p',
-                'speed': 'quality'
-            },
-            'text_to_video': {
-                'name': 'Text to Video 480p',
-                'description': 'Genera video solo desde texto (sin imagen)',
-                'duration_max': 8,
-                'resolution': '480p',
-                'speed': 'ultra_fast'
-            }
-        }
 
 def optimize_user_prompt_v3(image_url: str, text: str, mode: str = "video", style: str = "default") -> str:
     """
