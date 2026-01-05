@@ -248,6 +248,7 @@ El bot se configura principalmente a través de variables de entorno:
 #### Variables Opcionales:
 - `ALLOWED_USER_ID`: ID de usuario autorizado (restringe acceso a un usuario específico)
 - `DEFAULT_PROMPT`: Prompt por defecto cuando no se proporciona caption (ver ejemplo abajo)
+- `NEGATIVE_PROMPT`: Filtros negativos para mejorar calidad (ver ejemplo abajo)
 - `DEFAULT_MODEL`: Modelo por defecto (`ultra_fast`, `fast`, `quality`, `text_to_video`)
 - `USE_WEBHOOK`: Activar modo webhook (`true`/`false`)
 - `WEBHOOK_URL`: URL del webhook para Railway/Heroku
@@ -255,6 +256,11 @@ El bot se configura principalmente a través de variables de entorno:
 #### Ejemplo de DEFAULT_PROMPT:
 ```
 Absolutely fixed face and head position, zero head movement. No camera movement — a static, hyper-detailed cinematic shot. She swiftly reaches and removes her entire dress with decisive and strong motion, revealing bare natural breasts with visible nipples, fully naked body without underwear beneath exposing genitals. Skin texture rendered with extreme realism — soft, lifelike, with natural pores and subtle sheen under soft, diffused lighting. Moody, atmospheric tone with low-key shadows and ambient glow, evoking intimacy and tension. Shot in 4K resolution with shallow depth of field, blurring the background to isolate the subject. Cinematic composition, film grain subtly present, emphasizing emotional gravity and visual precision.
+```
+
+#### Ejemplo de NEGATIVE_PROMPT:
+```
+low quality, worst quality, blurry, artifacts, distortion, deformed, disfigured, ugly, extra limbs, mutated hands, malformed, poor anatomy, distorted face, distorted features, melting face, face morphing, changing face, changing identity, different person, text, watermark, logo, censored, mosaic, black bars, static camera, looped motion, bad transitions, fade transitions, jitter, flicker, clothing, underwear, bra, panties, shirt, pants, accessories, watch, smartwatch, cartoon, 3d render, doll, plastic skin, overexposed, underexposed, cluttered background
 ```
 
 ### Configuración en Código

@@ -27,6 +27,10 @@ DEFAULT_MODEL=ultra_fast
 # Este es el prompt que se usa automáticamente cuando envías una foto sin texto
 DEFAULT_PROMPT=Absolutely fixed face and head position, zero head movement. No camera movement — a static, hyper-detailed cinematic shot. She swiftly reaches and removes her entire dress with decisive and strong motion, revealing bare natural breasts with visible nipples, fully naked body without underwear beneath exposing genitals. Skin texture rendered with extreme realism — soft, lifelike, with natural pores and subtle sheen under soft, diffused lighting. Moody, atmospheric tone with low-key shadows and ambient glow, evoking intimacy and tension. Shot in 4K resolution with shallow depth of field, blurring the background to isolate the subject. Cinematic composition, film grain subtly present, emphasizing emotional gravity and visual precision.
 
+# Negative prompt automática (filtros para mejorar calidad)
+# Elementos que se excluyen automáticamente de todas las generaciones
+NEGATIVE_PROMPT=low quality, worst quality, blurry, artifacts, distortion, deformed, disfigured, ugly, extra limbs, mutated hands, malformed, poor anatomy, distorted face, distorted features, melting face, face morphing, changing face, changing identity, different person, text, watermark, logo, censored, mosaic, black bars, static camera, looped motion, bad transitions, fade transitions, jitter, flicker, clothing, underwear, bra, panties, shirt, pants, accessories, watch, smartwatch, cartoon, 3d render, doll, plastic skin, overexposed, underexposed, cluttered background
+
 # ===== CONFIGURACIÓN DE WEBHOOKS (solo para Railway/Heroku) =====
 
 # Activar modo webhook (true/false)

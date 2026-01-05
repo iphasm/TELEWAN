@@ -44,14 +44,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Prompt por defecto cuando no se proporciona caption (configurable via env)
-DEFAULT_PROMPT = os.getenv('DEFAULT_PROMPT',
-    "Absolutely fixed face and head position, zero head movement. No camera movement — a static, hyper-detailed cinematic shot. "
-    "She swiftly reaches and removes her entire dress with decisive and strong motion, revealing bare natural breasts with visible nipples, "
-    "fully naked body without underwear beneath exposing genitals. Skin texture rendered with extreme realism — soft, lifelike, "
-    "with natural pores and subtle sheen under soft, diffused lighting. Moody, atmospheric tone with low-key shadows and ambient glow, "
-    "evoking intimacy and tension. Shot in 4K resolution with shallow depth of field, blurring the background to isolate the subject. "
-    "Cinematic composition, film grain subtly present, emphasizing emotional gravity and visual precision."
-)
+DEFAULT_PROMPT = os.getenv('DEFAULT_PROMPT', '')
 
 
 def generate_serial_filename(prefix: str, extension: str) -> str:
@@ -534,6 +527,19 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         # Procesar el prompt con optimización automática
         if not message.caption:
+            # Verificar si hay DEFAULT_PROMPT configurado
+            if not DEFAULT_PROMPT or DEFAULT_PROMPT.strip() == "":
+                logger.warning("❌ Imagen enviada sin caption y DEFAULT_PROMPT no configurado")
+                await update.message.reply_text(
+                    "❌ **Error**: Enviaste una imagen sin descripción (caption).\n\n"
+                    "Por favor, incluye una descripción detallada de lo que quieres generar, por ejemplo:\n"
+                    "• 'Una mujer caminando por la ciudad con estilo fashion'\n"
+                    "• 'Retrato de una persona sonriendo'\n\n"
+                    "O configura la variable de entorno `DEFAULT_PROMPT` en Railway para usar un prompt automático.",
+                    parse_mode='Markdown'
+                )
+                return
+
             original_caption = ""  # Caption vacío para casos sin caption
             prompt = DEFAULT_PROMPT
             logger.info(f"🔄 Procesando imagen SIN caption - usando DEFAULT_PROMPT (longitud: {len(DEFAULT_PROMPT)} caracteres)")
