@@ -223,7 +223,8 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     try:
         # Log detallado de la request para debugging
-        logger.info("🔗 Webhook request received"        logger.info(f"   Method: {request.method}")
+        logger.info("🔗 Webhook request received")
+        logger.info(f"   Method: {request.method}")
         logger.info(f"   URL: {request.url}")
         logger.info(f"   Headers: {dict(request.headers)}")
         logger.info(f"   Content-Type: {request.headers.get('content-type', 'unknown')}")
