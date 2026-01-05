@@ -562,10 +562,10 @@ class VideoDownloader:
         try:
             platform = self.detect_platform(url)
             if not platform:
-            return {
-                'success': False,
-                'error': 'Plataforma no soportada. Solo Facebook, Instagram, X/Twitter, Reddit y TikTok.'
-            }
+                return {
+                    'success': False,
+                    'error': 'Plataforma no soportada. Solo Facebook, Instagram, X/Twitter, Reddit y TikTok.'
+                }
 
             logger.info(f"📥 Descargando video de {platform}: {url}")
 
