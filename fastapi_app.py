@@ -24,18 +24,13 @@ from bot import (
     image_document_filter, static_sticker_filter
 )
 
-# Importar eventos con manejo de errores
-try:
-    from events import event_bus, init_event_bus, shutdown_event_bus, init_event_handlers, shutdown_event_handlers
-    EVENTS_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"⚠️ Sistema de eventos no disponible: {e}")
-    EVENTS_AVAILABLE = False
-    # Funciones dummy
-    async def init_event_bus(): pass
-    async def shutdown_event_bus(): pass
-    async def init_event_handlers(): pass
-    async def shutdown_event_handlers(): pass
+# Sistema de eventos DESHABILITADO temporalmente para debugging
+# Los eventos requieren Redis que no está disponible en Railway free tier
+EVENTS_AVAILABLE = False
+async def init_event_bus(): pass
+async def shutdown_event_bus(): pass
+async def init_event_handlers(): pass
+async def shutdown_event_handlers(): pass
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -85,22 +80,9 @@ async def lifespan(app: FastAPI):
     if not Config.WAVESPEED_API_KEY:
         logger.warning("⚠️  WAVESPEED_API_KEY no configurado - funcionalidades limitadas")
 
-    # Startup: Inicializar componentes del sistema event-driven
+    # Startup: Inicializar bot de Telegram (eventos deshabilitados temporalmente)
     try:
-        # 1. Inicializar Event Bus (siempre, no requiere credenciales)
-        try:
-            await init_event_bus()
-            logger.info("✅ Event Bus inicializado correctamente")
-        except Exception as e:
-            logger.warning(f"⚠️  Event Bus no disponible (Redis): {e} - usando modo sin eventos")
-            logger.info("ℹ️  El bot funcionará normalmente sin sistema de eventos avanzado")
-
-        # 2. Inicializar Event Handlers (opcional)
-        try:
-            await init_event_handlers()
-            logger.info("✅ Event Handlers registrados correctamente")
-        except Exception as e:
-            logger.warning(f"⚠️  Event Handlers no disponibles: {e} - continuando sin handlers")
+        logger.info("ℹ️  Sistema de eventos deshabilitado - usando modo directo")
 
         # 3. Inicializar aplicación de Telegram (requiere token)
         try:
@@ -152,19 +134,10 @@ async def lifespan(app: FastAPI):
     logger.info("🛑 Apagando aplicación FastAPI")
 
     try:
-        # 1. Cerrar aplicación de Telegram
+        # Cerrar aplicación de Telegram
         if app_state["telegram_app"]:
             await app_state["telegram_app"].shutdown()
             logger.info("✅ Aplicación de Telegram cerrada correctamente")
-
-        # 2. Cerrar Event Handlers
-        await shutdown_event_handlers()
-        logger.info("✅ Event Handlers cerrados correctamente")
-
-        # 3. Cerrar Event Bus
-        await shutdown_event_bus()
-        logger.info("✅ Event Bus cerrado correctamente")
-
     except Exception as e:
         logger.error(f"❌ Error durante shutdown: {e}")
 
