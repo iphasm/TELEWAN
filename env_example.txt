@@ -23,6 +23,10 @@ WAVESPEED_BASE_URL=https://api.wavespeed.ai
 # Modelo por defecto ('ultra_fast', 'fast', 'quality', 'text_to_video')
 DEFAULT_MODEL=ultra_fast
 
+# Prompt por defecto cuando no se proporciona caption
+# Este es el prompt que se usa automáticamente cuando envías una foto sin texto
+DEFAULT_PROMPT=Absolutely fixed face and head position, zero head movement. No camera movement — a static, hyper-detailed cinematic shot. She swiftly reaches and removes her entire dress with decisive and strong motion, revealing bare natural breasts with visible nipples, fully naked body without underwear beneath exposing genitals. Skin texture rendered with extreme realism — soft, lifelike, with natural pores and subtle sheen under soft, diffused lighting. Moody, atmospheric tone with low-key shadows and ambient glow, evoking intimacy and tension. Shot in 4K resolution with shallow depth of field, blurring the background to isolate the subject. Cinematic composition, film grain subtly present, emphasizing emotional gravity and visual precision.
+
 # ===== CONFIGURACIÓN DE WEBHOOKS (solo para Railway/Heroku) =====
 
 # Activar modo webhook (true/false)

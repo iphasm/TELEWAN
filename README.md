@@ -237,9 +237,30 @@ Si no configuras `ALLOWED_USER_ID`, el bot permite acceso a todos los usuarios.
 
 ## ⚙️ Configuración
 
-El bot incluye configuración personalizable en `config.py`:
+### Variables de Entorno (Recomendado)
 
-- `ALLOWED_USER_ID`: ID de usuario autorizado (opcional, permite acceso restringido)
+El bot se configura principalmente a través de variables de entorno:
+
+#### Variables Obligatorias:
+- `TELEGRAM_BOT_TOKEN`: Token del bot de Telegram (obténlo de @BotFather)
+- `WAVESPEED_API_KEY`: API Key de Wavespeed AI
+
+#### Variables Opcionales:
+- `ALLOWED_USER_ID`: ID de usuario autorizado (restringe acceso a un usuario específico)
+- `DEFAULT_PROMPT`: Prompt por defecto cuando no se proporciona caption (ver ejemplo abajo)
+- `DEFAULT_MODEL`: Modelo por defecto (`ultra_fast`, `fast`, `quality`, `text_to_video`)
+- `USE_WEBHOOK`: Activar modo webhook (`true`/`false`)
+- `WEBHOOK_URL`: URL del webhook para Railway/Heroku
+
+#### Ejemplo de DEFAULT_PROMPT:
+```
+Absolutely fixed face and head position, zero head movement. No camera movement — a static, hyper-detailed cinematic shot. She swiftly reaches and removes her entire dress with decisive and strong motion, revealing bare natural breasts with visible nipples, fully naked body without underwear beneath exposing genitals. Skin texture rendered with extreme realism — soft, lifelike, with natural pores and subtle sheen under soft, diffused lighting. Moody, atmospheric tone with low-key shadows and ambient glow, evoking intimacy and tension. Shot in 4K resolution with shallow depth of field, blurring the background to isolate the subject. Cinematic composition, film grain subtly present, emphasizing emotional gravity and visual precision.
+```
+
+### Configuración en Código
+
+El bot incluye configuración adicional personalizable en `config.py`:
+
 - `MAX_VIDEO_DURATION`: Duración del video en segundos (default: 8)
 - `ASPECT_RATIO`: Relación de aspecto del video (default: "16:9")
 - `MAX_POLLING_ATTEMPTS`: Máximo número de intentos de polling (default: 240)

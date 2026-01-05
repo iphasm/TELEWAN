@@ -43,8 +43,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Prompt por defecto cuando no se proporciona caption
-DEFAULT_PROMPT = (
+# Prompt por defecto cuando no se proporciona caption (configurable via env)
+DEFAULT_PROMPT = os.getenv('DEFAULT_PROMPT',
     "Absolutely fixed face and head position, zero head movement. No camera movement — a static, hyper-detailed cinematic shot. "
     "She swiftly reaches and removes her entire dress with decisive and strong motion, revealing bare natural breasts with visible nipples, "
     "fully naked body without underwear beneath exposing genitals. Skin texture rendered with extreme realism — soft, lifelike, "
