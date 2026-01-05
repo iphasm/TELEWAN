@@ -363,53 +363,87 @@ class WavespeedAPI:
     def get_balance(self) -> dict:
         """
         Consulta el balance/creditos disponibles en la cuenta de Wavespeed
+        Según documentación oficial: GET /api/v3/balance
+        Respuesta: {code: 200, message: "success", data: {balance: X.XX}}
         """
         try:
-            # Intentar diferentes endpoints posibles para balance
-            balance_endpoints = [
-                '/user/balance',
-                '/balance',
-                '/credits',
-                '/account/balance',
-                '/api/user/balance'
-            ]
+            # Endpoint oficial según documentación 2026
+            endpoint = '/api/v3/balance'
+            url = f"{self.base_url}{endpoint}"
 
-            for endpoint in balance_endpoints:
-                try:
-                    url = f"{self.base_url}{endpoint}"
-                    logger.info(f"Consultando balance en: {url}")
+            logger.info(f"Consultando balance en: {url}")
 
-                    response = requests.get(url, headers=self.headers, timeout=10)
-                    response.raise_for_status()
+            response = requests.get(url, headers=self.headers, timeout=10)
+            response.raise_for_status()
 
-                    data = response.json()
-                    logger.info(f"Balance obtenido exitosamente desde {endpoint}")
-                    return data
+            data = response.json()
+            logger.info(f"Respuesta de balance obtenida: {data}")
 
-                except requests.exceptions.HTTPError as e:
-                    if e.response.status_code == 404:
-                        # Endpoint no existe, probar siguiente
-                        continue
-                    else:
-                        logger.error(f"Error HTTP consultando balance en {endpoint}: {e}")
-                        raise
-                except Exception as e:
-                    logger.warning(f"Error consultando {endpoint}: {e}")
-                    continue
+            # Validar estructura de respuesta según documentación
+            if data.get('code') == 200 and data.get('message') == 'success':
+                balance_data = data.get('data', {})
+                balance = balance_data.get('balance')
 
-            # Si ningún endpoint funcionó, retornar información básica
-            logger.warning("No se pudo consultar balance - endpoints no disponibles")
+                if balance is not None:
+                    logger.info(f"Balance obtenido exitosamente: ${balance}")
+                    return {
+                        'success': True,
+                        'balance': balance,
+                        'currency': 'USD',
+                        'raw_response': data
+                    }
+                else:
+                    logger.warning("Balance no encontrado en respuesta")
+                    return {
+                        'error': 'Balance not found',
+                        'message': 'El balance no está disponible en la respuesta',
+                        'raw_response': data
+                    }
+            else:
+                # Respuesta con código de error
+                error_code = data.get('code', 'unknown')
+                error_message = data.get('message', 'unknown error')
+                logger.warning(f"Error en respuesta de balance: {error_code} - {error_message}")
+                return {
+                    'error': f'API Error {error_code}',
+                    'message': error_message,
+                    'raw_response': data
+                }
+
+        except requests.exceptions.HTTPError as e:
+            error_code = e.response.status_code
+            try:
+                error_data = e.response.json()
+                error_message = error_data.get('message', 'HTTP Error')
+            except:
+                error_message = str(e)
+
+            logger.error(f"Error HTTP consultando balance ({error_code}): {error_message}")
             return {
-                'error': 'Balance endpoint not available',
-                'message': 'La API de Wavespeed no tiene endpoint público para consultar balance',
-                'available_endpoints_tested': balance_endpoints
+                'error': f'HTTP {error_code}',
+                'message': error_message,
+                'http_status': error_code
+            }
+
+        except requests.exceptions.Timeout:
+            logger.error("Timeout consultando balance")
+            return {
+                'error': 'Timeout',
+                'message': 'La consulta de balance tardó demasiado tiempo'
+            }
+
+        except requests.exceptions.ConnectionError:
+            logger.error("Error de conexión consultando balance")
+            return {
+                'error': 'Connection Error',
+                'message': 'No se pudo conectar al servidor de Wavespeed'
             }
 
         except Exception as e:
             logger.error(f"Error crítico consultando balance: {e}")
             return {
-                'error': str(e),
-                'message': 'Error consultando balance de Wavespeed'
+                'error': str(type(e).__name__),
+                'message': f'Error interno: {str(e)}'
             }
 
     def get_available_models(self) -> dict:
@@ -1264,58 +1298,52 @@ async def handle_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         wavespeed = WavespeedAPI()
         balance_data = wavespeed.get_balance()
 
-        # Procesar respuesta
-        if balance_data.get('error'):
+        # Procesar respuesta según nueva estructura
+        if balance_data.get('success'):
+            # Respuesta exitosa
+            balance = balance_data.get('balance')
+            currency = balance_data.get('currency', 'USD')
+
+            balance_info = "💰 **Balance de Wavespeed**\n\n"
+
+            if isinstance(balance, (int, float)):
+                balance_info += f"**Saldo actual:** ${balance:.2f} {currency}\n"
+            else:
+                balance_info += f"**Saldo actual:** {balance}\n"
+
+            # Agregar información adicional si está disponible
+            raw_response = balance_data.get('raw_response', {})
+            if 'data' in raw_response and isinstance(raw_response['data'], dict):
+                data = raw_response['data']
+                if 'credits' in data:
+                    credits = data['credits']
+                    balance_info += f"**Créditos disponibles:** {credits:,}\n"
+                if 'usage' in data:
+                    usage = data['usage']
+                    balance_info += f"**Uso del mes:** {usage}\n"
+                if 'plan' in data:
+                    plan = data['plan']
+                    balance_info += f"**Plan:** {plan}\n"
+
+            balance_info += f"\n📊 **Estado:** Operativo ✅\n"
+            balance_info += f"🔄 **Última consulta:** {datetime.now().strftime('%H:%M:%S')}"
+
+            await processing_msg.edit_text(balance_info, parse_mode='Markdown')
+            logger.info(f"Balance consultado exitosamente para usuario {user_id}: ${balance} {currency}")
+
+        else:
             # Error en la consulta
+            error_type = balance_data.get('error', 'Unknown error')
             error_msg = balance_data.get('message', 'Error desconocido')
+
             await processing_msg.edit_text(
                 f"❌ **Error consultando balance**\n\n"
+                f"**Tipo de error:** {error_type}\n"
                 f"**Detalles:** {error_msg}\n\n"
                 f"💡 Si el problema persiste, contacta al administrador.",
                 parse_mode='Markdown'
             )
-            logger.warning(f"Error consultando balance para usuario {user_id}: {error_msg}")
-            return
-
-        # Formatear respuesta exitosa
-        balance_info = "💰 **Balance de Wavespeed**\n\n"
-
-        # Intentar diferentes formatos de respuesta
-        if 'balance' in balance_data:
-            balance = balance_data['balance']
-            if isinstance(balance, (int, float)):
-                balance_info += f"**Saldo actual:** ${balance:.2f}\n"
-            else:
-                balance_info += f"**Saldo actual:** {balance}\n"
-
-        if 'credits' in balance_data:
-            credits = balance_data['credits']
-            if isinstance(credits, (int, float)):
-                balance_info += f"**Créditos disponibles:** {credits:,}\n"
-            else:
-                balance_info += f"**Créditos disponibles:** {credits}\n"
-
-        if 'usage' in balance_data:
-            usage = balance_data['usage']
-            balance_info += f"**Uso del mes:** {usage}\n"
-
-        if 'plan' in balance_data:
-            plan = balance_data['plan']
-            balance_info += f"**Plan:** {plan}\n"
-
-        # Si no hay datos específicos, mostrar respuesta cruda
-        if balance_info == "💰 **Balance de Wavespeed**\n\n":
-            balance_info += "**Información de cuenta:**\n"
-            for key, value in balance_data.items():
-                if key not in ['error', 'message']:
-                    balance_info += f"• **{key}:** {value}\n"
-
-        # Agregar información adicional
-        balance_info += f"\n📊 **Estado:** Operativo ✅\n"
-        balance_info += f"🔄 **Última consulta:** {datetime.now().strftime('%H:%M:%S')}"
-
-        await processing_msg.edit_text(balance_info, parse_mode='Markdown')
-        logger.info(f"Balance consultado exitosamente para usuario {user_id}")
+            logger.warning(f"Error consultando balance para usuario {user_id}: {error_type} - {error_msg}")
 
     except Exception as e:
         logger.error(f"Error crítico en comando /balance para usuario {user_id}: {e}")

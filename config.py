@@ -58,7 +58,7 @@ class Config:
         "🎨 **Optimización:**\n"
         "/optimize - Activar/desactivar optimización IA automática\n\n"
         "💰 **Cuenta:**\n"
-        "/balance - Consultar balance y créditos disponibles\n\n"
+        "/balance - Consultar saldo disponible en Wavespeed\n\n"
         "🔄 **Recuperación:**\n"
         "/lastvideo - Recuperar el último video procesado\n\n"
         "📝 **Cómo usar:**\n"
