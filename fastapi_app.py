@@ -222,6 +222,12 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     Procesa las actualizaciones de manera asíncrona con BackgroundTasks
     """
     try:
+        # Log detallado de la request para debugging
+        logger.info("🔗 Webhook request received"        logger.info(f"   Method: {request.method}")
+        logger.info(f"   URL: {request.url}")
+        logger.info(f"   Headers: {dict(request.headers)}")
+        logger.info(f"   Content-Type: {request.headers.get('content-type', 'unknown')}")
+
         # Verificar secret token si está configurado
         secret_token = os.getenv('WEBHOOK_SECRET_TOKEN')
         if secret_token:
@@ -241,6 +247,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
         user_id = from_user.get('id', 'unknown')
 
         logger.info(f"📨 Webhook recibido: update_id={update_id}, text='{text[:30]}...', user={user_id}")
+        logger.info(f"   Message keys: {list(message.keys()) if message else 'No message'}")
 
         # Incrementar contador
         app_state["processed_updates"] += 1
@@ -260,7 +267,18 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
         raise
     except Exception as e:
         logger.error(f"❌ Error procesando webhook: {e}")
+        import traceback
+        logger.error(f"   Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/webhook", tags=["Telegram"])
+async def telegram_webhook_get():
+    """
+    Endpoint GET para webhook (por compatibilidad)
+    Telegram a veces hace requests GET para verificar
+    """
+    logger.info("🔗 Webhook GET request (verificación de Telegram)")
+    return {"status": "webhook_endpoint_active"}
 
 async def process_telegram_update(update_data: Dict[str, Any]):
     """
@@ -270,6 +288,7 @@ async def process_telegram_update(update_data: Dict[str, Any]):
         # Update ya está importado al inicio del archivo
         update_id = update_data.get('update_id')
         logger.info(f"🔄 Procesando update {update_id}...")
+        logger.info(f"   Update keys: {list(update_data.keys())}")
 
         # Verificar que la aplicación está lista
         telegram_app = app_state.get("telegram_app")
@@ -279,16 +298,36 @@ async def process_telegram_update(update_data: Dict[str, Any]):
 
         # Crear objeto Update desde los datos
         update = Update.de_json(update_data, telegram_app.bot)
+        logger.info(f"   Update object created: {type(update)}")
 
-        # Verificar si es un mensaje con texto
-        if update.message and update.message.text:
-            text = update.message.text
+        # Log detallado del tipo de update
+        if update.message:
+            logger.info(f"   Tipo: Message")
+            if update.message.photo:
+                logger.info(f"   Contiene: Photo ({len(update.message.photo)} tamaños)")
+                if update.message.caption:
+                    logger.info(f"   Caption: '{update.message.caption[:50]}...'")
+                else:
+                    logger.info(f"   Caption: None (sin caption)")
+            elif update.message.document:
+                logger.info(f"   Contiene: Document ({update.message.document.mime_type})")
+            elif update.message.sticker:
+                logger.info(f"   Contiene: Sticker (animated: {update.message.sticker.is_animated})")
+            elif update.message.text:
+                logger.info(f"   Contiene: Text '{update.message.text[:50]}...'")
+            else:
+                logger.info(f"   Contiene: Otro tipo de mensaje")
+
             user_id = update.message.from_user.id if update.message.from_user else 'unknown'
-            logger.info(f"📨 Mensaje: '{text[:50]}' de user_id={user_id}")
+            logger.info(f"   De usuario: {user_id}")
+        elif update.callback_query:
+            logger.info(f"   Tipo: Callback Query")
+        else:
+            logger.info(f"   Tipo: Otro ({type(update).__name__})")
 
         # Procesar la actualización con el bot
+        logger.info(f"   Enviando a telegram_app.process_update()...")
         await telegram_app.process_update(update)
-
         logger.info(f"✅ Update {update_id} procesado correctamente")
 
     except Exception as e:
