@@ -17,6 +17,7 @@ from bot import (
     start, help_command, list_models_command, handle_text_video,
     handle_quality_video, handle_preview_video, handle_optimize
 )
+from events import event_bus, init_event_bus, shutdown_event_bus, init_event_handlers, shutdown_event_handlers
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -33,8 +34,17 @@ async def lifespan(app: FastAPI):
     """Manejador de ciclo de vida de la aplicación"""
     logger.info("🚀 Iniciando aplicación FastAPI para TELEWAN Bot")
 
-    # Startup: Inicializar aplicación de Telegram
+    # Startup: Inicializar componentes del sistema event-driven
     try:
+        # 1. Inicializar Event Bus
+        await init_event_bus()
+        logger.info("✅ Event Bus inicializado correctamente")
+
+        # 2. Inicializar Event Handlers
+        await init_event_handlers()
+        logger.info("✅ Event Handlers registrados correctamente")
+
+        # 3. Inicializar aplicación de Telegram
         from telegram.ext import Application
         telegram_app = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
 
@@ -59,17 +69,33 @@ async def lifespan(app: FastAPI):
         app_state["telegram_app"] = telegram_app
         logger.info("✅ Aplicación de Telegram inicializada correctamente")
 
+        logger.info("🎯 Sistema Event-Driven completamente operativo")
+
     except Exception as e:
-        logger.error(f"❌ Error inicializando aplicación de Telegram: {e}")
+        logger.error(f"❌ Error inicializando componentes: {e}")
         raise
 
     yield
 
-    # Shutdown: Limpiar recursos
+    # Shutdown: Limpiar recursos en orden inverso
     logger.info("🛑 Apagando aplicación FastAPI")
-    if app_state["telegram_app"]:
-        await app_state["telegram_app"].shutdown()
-        logger.info("✅ Aplicación de Telegram cerrada correctamente")
+
+    try:
+        # 1. Cerrar aplicación de Telegram
+        if app_state["telegram_app"]:
+            await app_state["telegram_app"].shutdown()
+            logger.info("✅ Aplicación de Telegram cerrada correctamente")
+
+        # 2. Cerrar Event Handlers
+        await shutdown_event_handlers()
+        logger.info("✅ Event Handlers cerrados correctamente")
+
+        # 3. Cerrar Event Bus
+        await shutdown_event_bus()
+        logger.info("✅ Event Bus cerrado correctamente")
+
+    except Exception as e:
+        logger.error(f"❌ Error durante shutdown: {e}")
 
 # Crear aplicación FastAPI
 app = FastAPI(
