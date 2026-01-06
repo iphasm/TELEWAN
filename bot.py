@@ -804,7 +804,9 @@ class VideoDownloader:
                     return curl_result
                 else:
                     logger.warning(f"⚠️ curl_cffi falló: {curl_result.get('error', 'Unknown error')}")
-                    logger.info("🔄 Intentando con yt-dlp como fallback")
+                    logger.info("🔄 Intentando con yt-dlp (con impersonation avanzada) como fallback")
+
+            # Si curl_cffi no está disponible o falló, usar yt-dlp con impersonation
 
             # Fallback a yt-dlp
             video_id = str(uuid.uuid4())[:8]
@@ -823,20 +825,52 @@ class VideoDownloader:
                 '--print', '%(ext)s',
             ]
 
-            # Configuración para yt-dlp (fallback después de curl_cffi)
-            # Usar configuración más básica ya que curl_cffi maneja la impersonación avanzada
+            # Configuración para yt-dlp con impersonation avanzada
+            # Necesaria para plataformas modernas que bloquean requests simples
             cmd.extend([
-                '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
                 '--add-header', 'Accept-Language: en-US,en;q=0.9',
+                '--add-header', 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                '--add-header', 'Sec-Ch-Ua-Mobile: ?1',
+                '--add-header', 'Sec-Ch-Ua-Platform: "iOS"',
             ])
 
-            # Configuración específica adicional por plataforma para yt-dlp
+            # Configuración de impersonation específica por plataforma
             if platform == 'TikTok':
-                cmd.extend(['--add-header', 'Referer: https://www.tiktok.com/'])
-            elif platform == 'Facebook':
-                cmd.extend(['--add-header', 'Referer: https://www.facebook.com/'])
+                # Usar impersonation de Safari iOS para TikTok
+                cmd.extend([
+                    '--impersonate', 'safari-ios:17.5.1',
+                    '--add-header', 'Referer: https://www.tiktok.com/',
+                    '--add-header', 'Sec-Fetch-Dest: document',
+                    '--add-header', 'Sec-Fetch-Mode: navigate',
+                    '--add-header', 'Sec-Fetch-Site: none',
+                ])
             elif platform == 'Instagram':
-                cmd.extend(['--add-header', 'Referer: https://www.instagram.com/'])
+                # Usar impersonation de Safari iOS para Instagram
+                cmd.extend([
+                    '--impersonate', 'safari-ios:17.5.1',
+                    '--add-header', 'Referer: https://www.instagram.com/',
+                    '--add-header', 'X-Requested-With: XMLHttpRequest',
+                ])
+            elif platform == 'Facebook':
+                # Usar impersonation de Chrome para Facebook
+                cmd.extend([
+                    '--impersonate', 'chrome-120',
+                    '--add-header', 'Referer: https://www.facebook.com/',
+                ])
+            elif platform == 'X/Twitter':
+                # Usar impersonation de Safari para Twitter/X
+                cmd.extend([
+                    '--impersonate', 'safari-17',
+                    '--add-header', 'Referer: https://twitter.com/',
+                    '--add-header', 'Authorization: Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
+                ])
+            elif platform == 'Reddit':
+                # Usar impersonation básica para Reddit
+                cmd.extend([
+                    '--impersonate', 'chrome-120',
+                    '--add-header', 'Referer: https://www.reddit.com/',
+                ])
 
             # Agregar la URL al final
             cmd.append(url)
@@ -853,9 +887,59 @@ class VideoDownloader:
 
             if result.returncode != 0:
                 logger.error(f"Error en yt-dlp: {result.stderr}")
+
+                # Intentar con configuración básica si la impersonation falló
+                if 'impersonate' in ' '.join(cmd) and 'no impersonate target is available' in result.stderr:
+                    logger.info("🔄 Intentando con configuración básica (sin impersonation) como último recurso")
+                    basic_cmd = [
+                        'yt-dlp',
+                        '--no-check-certificates',
+                        '--no-playlist',
+                        '--max-filesize', '50M',  # Reducir límite para videos más pequeños
+                        '--format', 'best[height<=480]',  # Calidad más baja
+                        '--output', output_template,
+                        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        '--add-header', 'Accept-Language: en-US,en;q=0.9',
+                        url
+                    ]
+
+                    basic_result = subprocess.run(
+                        basic_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=60  # Timeout más corto
+                    )
+
+                    if basic_result.returncode == 0:
+                        logger.info("✅ Configuración básica funcionó como último recurso")
+                        # Procesar resultado exitoso
+                        lines = basic_result.stdout.strip().split('\n')
+                        if len(lines) >= 3:
+                            title = lines[0] if lines[0] else f"Video de {platform}"
+                            duration = int(float(lines[1])) if lines[1].isdigit() else 0
+                            ext = lines[2] if lines[2] else 'mp4'
+
+                            # Encontrar el archivo descargado
+                            for file in os.listdir(self.temp_dir):
+                                if file.startswith(f'social_video_{video_id}') and file.endswith(f'.{ext}'):
+                                    filepath = os.path.join(self.temp_dir, file)
+                                    file_size = os.path.getsize(filepath)
+
+                                    return {
+                                        'success': True,
+                                        'filepath': filepath,
+                                        'title': title,
+                                        'duration': duration,
+                                        'platform': platform,
+                                        'method': 'yt-dlp-basic',
+                                        'file_size': file_size
+                                    }
+
+                # Si todo falló
+                error_msg = result.stderr[:200] + "..." if len(result.stderr) > 200 else result.stderr
                 return {
                     'success': False,
-                    'error': f'Error descargando video: {result.stderr[:200]}...'
+                    'error': f'Error descargando video: {error_msg}\n\n💡 También puedes usar /download [URL] para intentar manualmente.'
                 }
 
             # Parsear la salida
