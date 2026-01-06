@@ -6,13 +6,15 @@ import os
 import asyncio
 import sys
 
-# Simular las variables de entorno de Railway
-os.environ['ALLOWED_USER_ID'] = "1265547936"
-os.environ['TELEGRAM_BOT_TOKEN'] = "8279313475:AAGqfBXqX41HLlM5MCDUPmlukQ62-8NSjnw"
-os.environ['VOLUME_PATH'] = "/app/storage"
-os.environ['WAVESPEED_API_KEY'] = "92047d175a3908df00b119fdd4660ef2f1a2c312da1e93406dce24d1342cb402"
-os.environ['USE_WEBHOOK'] = "true"
-os.environ['WEBHOOK_URL'] = "telewan-production.up.railway.app"
+# NOTA: Este archivo requiere que las siguientes variables de entorno estén configuradas:
+# - TELEGRAM_BOT_TOKEN: Token del bot de Telegram
+# - WAVESPEED_API_KEY: API key de WaveSpeed AI
+# - ALLOWED_USER_ID: ID del usuario autorizado
+# - VOLUME_PATH: Ruta del volumen para archivos temporales
+# - USE_WEBHOOK: true/false para usar webhook
+# - WEBHOOK_URL: URL del webhook (solo si USE_WEBHOOK=true)
+
+# Las variables deben configurarse en Railway o en un archivo .env (no incluido en git)
 
 async def validate_credentials():
     """Validar todas las credenciales configuradas"""
