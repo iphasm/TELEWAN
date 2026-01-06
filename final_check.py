@@ -6,10 +6,10 @@ import os
 import asyncio
 
 # Simular las variables de entorno de Railway
-os.environ['ALLOWED_USER_ID'] = "1265547936"
-os.environ['TELEGRAM_BOT_TOKEN'] = "8279313475:AAGqfBXqX41HLlM5MCDUPmlukQ62-8NSjnw"
+os.environ['ALLOWED_USER_ID'] =
+os.environ['TELEGRAM_BOT_TOKEN'] =
 os.environ['VOLUME_PATH'] = "/app/storage"
-os.environ['WAVESPEED_API_KEY'] = "92047d175a3908df00b119fdd4660ef2f1a2c312da1e93406dce24d1342cb402"
+os.environ['WAVESPEED_API_KEY'] = 
 os.environ['USE_WEBHOOK'] = "true"
 os.environ['WEBHOOK_URL'] = "telewan-production.up.railway.app"
 
