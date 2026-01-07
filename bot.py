@@ -142,6 +142,41 @@ def save_video_to_volume(video_bytes: bytes, filename: str) -> str:
     logger.info(f"Video guardado en: {filepath}")
     return filepath
 
+def cleanup_old_downloads(context, chat_id):
+    """
+    Limpia entradas antiguas de descargas del contexto del usuario para evitar memory leaks
+    """
+    try:
+        # Buscar y eliminar entradas de descargas antiguas (más de 1 hora)
+        import time
+        current_time = time.time()
+        one_hour_ago = current_time - 3600  # 1 hora en segundos
+
+        keys_to_remove = []
+        for key, value in context.user_data.items():
+            if key.startswith('downloaded_'):
+                # Si la entrada no tiene timestamp, asumir que es antigua
+                if isinstance(value, dict) and 'timestamp' in value:
+                    if value['timestamp'] < one_hour_ago:
+                        keys_to_remove.append(key)
+                elif isinstance(value, bool) and value == True:
+                    # Para entradas booleanas simples, considerarlas como antiguas después de cierto tiempo
+                    # Como no tenemos timestamp, las limpiamos después de procesar
+                    keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            del context.user_data[key]
+            logger.debug(f"🧹 Limpiada entrada antigua de descarga: {key}")
+
+        if keys_to_remove:
+            logger.info(f"🧹 Limpieza completada: {len(keys_to_remove)} entradas antiguas eliminadas para chat {chat_id}")
+        else:
+            logger.debug(f"🧹 No hay entradas antiguas para limpiar en chat {chat_id}")
+
+    except Exception as cleanup_error:
+        logger.warning(f"⚠️ Error limpiando descargas antiguas: {cleanup_error}")
+        # No fallar el procesamiento principal por un error de limpieza
+
 class WavespeedAPI:
     def __init__(self):
         self.api_key = Config.WAVESPEED_API_KEY
@@ -1220,6 +1255,19 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.info(f"🧹 Flag limpiado por autenticación denegada: chat {chat_id}")
             return
 
+        # Validar que DEFAULT_PROMPT esté configurado para casos sin caption
+        if not message.caption and (not DEFAULT_PROMPT or DEFAULT_PROMPT.strip() == ""):
+            logger.warning("❌ Imagen enviada sin caption pero DEFAULT_PROMPT no está configurado")
+            await message.reply_text(
+                "❌ **Error de configuración**\n\n"
+                "Para procesar imágenes sin descripción (caption), es necesario configurar un prompt por defecto.\n\n"
+                "Por favor, contacta al administrador para configurar `DEFAULT_PROMPT` en las variables de entorno."
+            )
+            # Limpiar el flag de procesamiento
+            context.user_data[processing_key] = False
+            logger.info(f"🧹 Flag limpiado por falta de DEFAULT_PROMPT: chat {chat_id}")
+            return
+
         # Determinar el modelo a usar basado en el contexto del usuario
         user_model = context.user_data.get('selected_model', Config.DEFAULT_MODEL)
 
@@ -1241,6 +1289,9 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             if not DEFAULT_PROMPT or DEFAULT_PROMPT.strip() == "":
                 logger.warning("❌ Imagen enviada sin caption y DEFAULT_PROMPT no configurado")
                 await update.message.reply_text(Config.NO_CAPTION_MESSAGE, parse_mode='Markdown')
+                # Limpiar el flag de procesamiento antes de retornar
+                context.user_data[processing_key] = False
+                logger.info(f"🧹 Flag limpiado por falta de DEFAULT_PROMPT: chat {chat_id}")
                 return
 
             original_caption = ""  # Caption vacío para casos sin caption
@@ -1441,6 +1492,13 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                     video_url = task_data['outputs'][0]
                                     logger.info(f"Video URL obtained: {video_url}")
 
+                                    # Verificar si ya descargamos este video URL para evitar duplicados
+                                    downloaded_video_key = f"downloaded_{request_id}_{video_url}"
+                                    if context.user_data.get(downloaded_video_key, False):
+                                        logger.warning(f"⚠️ Video URL ya descargado anteriormente: {video_url}")
+                                        logger.info(f"   Saltando descarga duplicada para request {request_id}")
+                                        continue
+
                                     try:
                                         # Validar URL antes de descargar
                                         if not video_url or not video_url.startswith('http'):
@@ -1452,16 +1510,34 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                         # Descargar el video con validación (timeout adaptado al modelo)
                                         video_bytes = wavespeed.download_video(video_url, model=user_model)
 
+                                        # Marcar que descargamos este video URL
+                                        context.user_data[downloaded_video_key] = True
+
                                         if len(video_bytes) > 1000:  # Verificar que tenga contenido significativo
+                                            logger.info(f"✅ Video descargado correctamente: {len(video_bytes)} bytes")
+
                                             # Generar nombre único para el video y guardarlo en el volumen
                                             video_filename = generate_serial_filename("output", "mp4")
                                             video_filepath = save_video_to_volume(video_bytes, video_filename)
-                                            logger.info(f"Video saved to: {video_filepath}")
+                                            logger.info(f"💾 Video guardado en: {video_filepath}")
+
+                                            # Verificar que el archivo se guardó correctamente
+                                            if not os.path.exists(video_filepath) or os.path.getsize(video_filepath) == 0:
+                                                logger.error(f"❌ Error: Archivo de video no se guardó correctamente: {video_filepath}")
+                                                raise Exception(f"Archivo de video no se guardó correctamente: {video_filepath}")
+
+                                            logger.info(f"✅ Archivo de video verificado: {os.path.getsize(video_filepath)} bytes")
 
                                             # Preparar el caption del video con el prompt utilizado
                                             video_caption = f"🎬 **Prompt utilizado:**\n{prompt}"
                                             if prompt_optimized:
                                                 video_caption += "\n\n🎨 *Prompt optimizado automáticamente*"
+
+                                            logger.info(f"📝 Caption del video preparado:")
+                                            logger.info(f"   Longitud: {len(video_caption)} caracteres")
+                                            logger.info(f"   Prompt optimizado: {prompt_optimized}")
+                                            logger.info(f"   Original caption presente: {bool(original_caption)}")
+                                            logger.info(f"   Preview: {video_caption[:200]}...")
 
                                             # Enviar el video desde el archivo guardado con reintentos
                                             send_attempts = 3  # Máximo 3 intentos para enviar a Telegram
@@ -1470,6 +1546,11 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                             for send_attempt in range(send_attempts):
                                                 try:
                                                     logger.info(f"📤 Enviando video a Telegram (intento {send_attempt + 1}/{send_attempts})")
+                                                    logger.info(f"   Chat ID: {update.effective_chat.id}")
+                                                    logger.info(f"   Video filepath: {video_filepath}")
+                                                    logger.info(f"   Video file exists: {os.path.exists(video_filepath)}")
+                                                    logger.info(f"   Video file size: {os.path.getsize(video_filepath) if os.path.exists(video_filepath) else 'N/A'}")
+                                                    logger.info(f"   Caption length: {len(video_caption)} chars")
 
                                                     with open(video_filepath, 'rb') as video_file:
                                                         sent_message = await context.bot.send_video(
@@ -1481,10 +1562,12 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
                                                     video_sent_successfully = True
                                                     logger.info(f"✅ Video enviado exitosamente a Telegram en intento {send_attempt + 1}")
+                                                    logger.info(f"   Message ID enviado: {sent_message.message_id if sent_message else 'N/A'}")
                                                     break  # Salir del loop si se envió correctamente
 
                                                 except Exception as send_error:
                                                     logger.error(f"❌ Error enviando video a Telegram (intento {send_attempt + 1}): {send_error}")
+                                                    logger.error(f"   Tipo de error: {type(send_error).__name__}")
 
                                                     if send_attempt < send_attempts - 1:  # No es el último intento
                                                         wait_time = 2 * (send_attempt + 1)  # Espera progresiva: 2s, 4s
@@ -1521,7 +1604,8 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                             logger.info(f"🧹 Flag limpiado por envío exitoso de video: chat {chat_id}")
                                             return
                                         else:
-                                            logger.warning(f"Downloaded video too small: {len(video_bytes)} bytes")
+                                            logger.warning(f"❌ Video descargado muy pequeño: {len(video_bytes)} bytes - descartando")
+                                            raise Exception(f"Video descargado muy pequeño: {len(video_bytes)} bytes")
 
                                     except Exception as download_error:
                                         logger.error(f"❌ Error descargando video (intento {output_check + 1}/5): {download_error}")
@@ -1579,8 +1663,10 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
 
         else:
+            logger.error(f"❌ Error al iniciar la generación del video - respuesta inválida de API")
             await processing_msg.edit_text(
-                "❌ Error al iniciar la generación del video."
+                "❌ Error al iniciar la generación del video.\n\n"
+                "Verifica que la API de WaveSpeed esté funcionando correctamente."
             )
 
     except Exception as e:
@@ -1589,23 +1675,32 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.error(f"   Chat ID: {chat_id}, Message ID: {message_id}")
         logger.error(f"   Tipo de imagen: {media_type}")
         logger.error(f"   Modelo: {user_model}")
+        logger.error(f"   Tiene caption: {bool(message.caption)}")
+        logger.error(f"   DEFAULT_PROMPT configurado: {bool(DEFAULT_PROMPT and DEFAULT_PROMPT.strip())}")
 
         # Mostrar información adicional si es posible
         if hasattr(e, '__traceback__'):
             import traceback
             logger.error(f"   Traceback completo:\n{traceback.format_exc()}")
 
-        await update.message.reply_text(
-            "❌ Ocurrió un error inesperado. Por favor, inténtalo de nuevo.\n\n"
-            f"**Detalles técnicos:**\n"
-            f"• Error: `{type(e).__name__}`\n"
-            f"• Mensaje: `{str(e)}`\n\n"
-            f"💡 Contacta al administrador si el problema persiste."
-        )
+        try:
+            await update.message.reply_text(
+                "❌ Ocurrió un error inesperado. Por favor, inténtalo de nuevo.\n\n"
+                f"**Detalles técnicos:**\n"
+                f"• Error: `{type(e).__name__}`\n"
+                f"• Mensaje: `{str(e)}`\n\n"
+                f"💡 Contacta al administrador si el problema persiste."
+            )
+        except Exception as reply_error:
+            logger.error(f"❌ Error adicional enviando mensaje de error: {reply_error}")
+            # No podemos hacer mucho más aquí sin arriesgar un loop infinito
     finally:
         # Limpiar el flag de procesamiento
         context.user_data[processing_key] = False
         logger.info(f"✅ Procesamiento finalizado y flag limpiado para chat {chat_id}")
+
+        # Limpiar descargas antiguas del contexto para evitar memory leaks
+        cleanup_old_downloads(context, chat_id)
 
 # Funciones wrapper para diferentes tipos de mensajes con imagen
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
