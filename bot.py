@@ -689,33 +689,118 @@ class WavespeedAPI:
         Retorna información sobre los modelos disponibles
         """
         return {
+            # Modelos gratuitos / básicos
             'ultra_fast': {
-                'name': 'Ultra Fast 480p',
+                'name': '⚡ Ultra Fast 480p',
                 'description': 'Video rápido en 480p, duración máxima 8s',
                 'duration_max': 8,
                 'resolution': '480p',
-                'speed': 'ultra_fast'
+                'speed': 'ultra_fast',
+                'tier': 'free',
+                'cost': 0.05
             },
             'fast': {
-                'name': 'Fast 480p',
+                'name': '🚀 Fast 480p',
                 'description': 'Video rápido en 480p con mejor calidad',
                 'duration_max': 8,
                 'resolution': '480p',
-                'speed': 'fast'
+                'speed': 'fast',
+                'tier': 'free',
+                'cost': 0.08
             },
             'quality': {
-                'name': 'Quality 720p',
+                'name': '🎬 Quality 720p',
                 'description': 'Video de alta calidad en 720p',
                 'duration_max': 8,
                 'resolution': '720p',
-                'speed': 'quality'
+                'speed': 'quality',
+                'tier': 'free',
+                'cost': 0.12
             },
             'text_to_video': {
-                'name': 'Text to Video 480p',
+                'name': '📝 Text to Video 480p',
                 'description': 'Genera video solo desde texto (sin imagen)',
                 'duration_max': 8,
                 'resolution': '480p',
-                'speed': 'ultra_fast'
+                'speed': 'ultra_fast',
+                'tier': 'free',
+                'cost': 0.07
+            },
+
+            # 🎬 MODELOS PREMIUM PROPUESTA 1: CINEMÁTICO PROFESIONAL
+            'cinematic_1080p': {
+                'name': '🎥 Cinematic 1080p PRO',
+                'description': 'Videos cinematográficos profesionales en FullHD',
+                'duration_max': 15,
+                'resolution': '1080p',
+                'speed': 'premium',
+                'tier': 'premium',
+                'cost': 0.50,
+                'features': ['professional_lighting', 'cinematic_angles', '4k_upscale']
+            },
+            'stylized_art': {
+                'name': '🎨 Stylized Art 720p',
+                'description': 'Videos con estilos artísticos únicos y creativos',
+                'duration_max': 12,
+                'resolution': '720p',
+                'speed': 'premium',
+                'tier': 'premium',
+                'cost': 0.35,
+                'features': ['art_styles', 'color_grading', 'creative_effects']
+            },
+
+            # 🎭 MODELOS PREMIUM PROPUESTA 2: ANIMACIÓN AVANZADA
+            'animation_4k': {
+                'name': '🎭 Animation 4K Ultra',
+                'description': 'Animaciones de ultra alta calidad en 4K',
+                'duration_max': 10,
+                'resolution': '4K',
+                'speed': 'premium',
+                'tier': 'premium',
+                'cost': 0.75,
+                'features': ['4k_animation', 'smooth_motion', 'particle_effects']
+            },
+            'music_video': {
+                'name': '🎵 Music Video 1080p',
+                'description': 'Videos sincronizados automáticamente con beats musicales',
+                'duration_max': 20,
+                'resolution': '1080p',
+                'speed': 'premium',
+                'tier': 'premium',
+                'cost': 0.60,
+                'features': ['music_sync', 'beat_matching', 'audio_reactive']
+            },
+
+            # 🎬 MODELOS PREMIUM PROPUESTA 3: VIDEOS LARGOS
+            'long_video_60s': {
+                'name': '📚 Long Video 60s Extended',
+                'description': 'Videos narrativos largos de hasta 60 segundos',
+                'duration_max': 60,
+                'resolution': '720p',
+                'speed': 'extended',
+                'tier': 'premium',
+                'cost': 1.00,
+                'features': ['narrative_flow', 'scene_transitions', 'extended_duration']
+            },
+            'educational': {
+                'name': '📖 Educational Content 720p',
+                'description': 'Contenido educativo optimizado para aprendizaje',
+                'duration_max': 45,
+                'resolution': '720p',
+                'speed': 'educational',
+                'tier': 'premium',
+                'cost': 0.80,
+                'features': ['clear_narration', 'educational_style', 'information_density']
+            },
+            'documentary': {
+                'name': '🎥 Documentary 1080p',
+                'description': 'Estilo documental profesional para contenido serio',
+                'duration_max': 30,
+                'resolution': '1080p',
+                'speed': 'premium',
+                'tier': 'premium',
+                'cost': 0.90,
+                'features': ['documentary_style', 'professional_audio', 'narrative_depth']
             }
         }
 
@@ -1977,6 +2062,91 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         # Limpiar descargas antiguas del contexto para evitar memory leaks
         cleanup_old_downloads(context, chat_id)
 
+# Comando para mostrar opciones premium
+async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Muestra las opciones premium disponibles y modelos avanzados
+    """
+    try:
+        user_id = update.effective_user.id if update.effective_user else "unknown"
+
+        # Verificar autenticación si está configurada
+        if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+            await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
+            return
+
+        wavespeed = WavespeedAPI()
+        all_models = wavespeed.get_available_models()
+
+        # Separar modelos por tier
+        free_models = {k: v for k, v in all_models.items() if v.get('tier') == 'free'}
+        premium_models = {k: v for k, v in all_models.items() if v.get('tier') == 'premium'}
+
+        # Crear mensaje premium
+        premium_msg = "🎬 **TELEWAN PREMIUM - Modelos Avanzados** 🎬\n\n"
+        premium_msg += "🚀 **Potencia tu creatividad con modelos profesionales**\n\n"
+
+        # Modelos gratuitos actuales
+        premium_msg += "🆓 **Modelos Gratuitos Actuales:**\n"
+        for model_key, model_info in free_models.items():
+            cost = model_info.get('cost', 0)
+            premium_msg += f"• {model_info['name']} - ${cost:.2f}\n"
+        premium_msg += "\n"
+
+        # Modelos premium - CINEBOT
+        premium_msg += "🎥 **CINEBOT - Videos Cinematográficos:**\n"
+        cine_models = {k: v for k, v in premium_models.items()
+                      if k in ['cinematic_1080p', 'stylized_art']}
+        for model_key, model_info in cine_models.items():
+            cost = model_info.get('cost', 0)
+            features = ', '.join(model_info.get('features', []))
+            premium_msg += f"• {model_info['name']} - ${cost:.2f}\n"
+            premium_msg += f"  _{features}_\n"
+        premium_msg += "\n"
+
+        # Modelos premium - ANIMEBOT
+        premium_msg += "🎭 **ANIMEBOT - Animación & Efectos:**\n"
+        anime_models = {k: v for k, v in premium_models.items()
+                       if k in ['animation_4k', 'music_video']}
+        for model_key, model_info in anime_models.items():
+            cost = model_info.get('cost', 0)
+            features = ', '.join(model_info.get('features', []))
+            premium_msg += f"• {model_info['name']} - ${cost:.2f}\n"
+            premium_msg += f"  _{features}_\n"
+        premium_msg += "\n"
+
+        # Modelos premium - STORYBOT
+        premium_msg += "📚 **STORYBOT - Videos Narrativos:**\n"
+        story_models = {k: v for k, v in premium_models.items()
+                       if k in ['long_video_60s', 'educational', 'documentary']}
+        for model_key, model_info in story_models.items():
+            cost = model_info.get('cost', 0)
+            duration = model_info.get('duration_max', 8)
+            premium_msg += f"• {model_info['name']} - ${cost:.2f} ({duration}s)\n"
+        premium_msg += "\n"
+
+        # Información de precios y suscripciones
+        premium_msg += "💰 **Planes de Suscripción:**\n"
+        premium_msg += "• **Free:** 5 videos/día (modelos básicos)\n"
+        premium_msg += "• **Pro:** $4.99/mes (videos ilimitados básicos)\n"
+        premium_msg += "• **Creator:** $9.99/mes (acceso a modelos premium)\n"
+        premium_msg += "• **Enterprise:** $49.99/mes (API + modelos exclusivos)\n\n"
+
+        premium_msg += "📞 **Contacto:** Para activar premium o más información\n"
+        premium_msg += "💡 **Próximamente:** Modelos premium disponibles en beta\n\n"
+
+        premium_msg += "🎯 Usa `/models` para ver modelos disponibles actualmente"
+
+        await update.message.reply_text(premium_msg, parse_mode='Markdown')
+
+    except Exception as e:
+        logger.error(f"Error en comando premium: {e}")
+        await update.message.reply_text(
+            "❌ Error al mostrar opciones premium.\n\n"
+            f"**Detalles:** {str(e)}\n\n"
+            "Inténtalo de nuevo o contacta al administrador."
+        )
+
 # Funciones wrapper para diferentes tipos de mensajes con imagen
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejador específico para fotos"""
@@ -2867,6 +3037,7 @@ def main() -> None:
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("models", list_models_command))
+        application.add_handler(CommandHandler("premium", premium_command))
         application.add_handler(CommandHandler("textvideo", handle_text_video))
         application.add_handler(CommandHandler("quality", handle_quality_video))
         application.add_handler(CommandHandler("preview", handle_preview_video))
