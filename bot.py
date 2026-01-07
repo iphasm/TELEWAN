@@ -1673,10 +1673,88 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
                                     # Verificar si ya descargamos este video URL para evitar duplicados
                                     downloaded_video_key = f"downloaded_{request_id}_{video_url}"
-                                    if context.user_data.get(downloaded_video_key, False):
+                                    downloaded_info = context.user_data.get(downloaded_video_key)
+                                    if downloaded_info and isinstance(downloaded_info, dict):
+                                        # Video ya descargado, usar archivo existente
+                                        existing_filepath = downloaded_info.get('filepath')
+                                        if existing_filepath and os.path.exists(existing_filepath):
+                                            logger.info(f"✅ Reutilizando video ya descargado: {existing_filepath}")
+                                            video_filepath = existing_filepath
+
+                                            # Preparar el caption del video con el prompt utilizado
+                                            video_caption = f"🎬 **Prompt utilizado:**\n{prompt}"
+                                            if prompt_optimized:
+                                                video_caption += "\n\n🎨 *Prompt optimizado automáticamente*"
+
+                                            logger.info(f"📝 Caption del video preparado para archivo reutilizado")
+                                            logger.info(f"   Prompt optimizado: {prompt_optimized}")
+
+                                            # Saltar directamente a la lógica de envío
+                                            # Enviar el video desde el archivo guardado con reintentos
+                                            send_attempts = 3  # Máximo 3 intentos para enviar a Telegram
+                                            video_sent_successfully = False
+
+                                            for send_attempt in range(send_attempts):
+                                                try:
+                                                    logger.info(f"📤 Enviando video reutilizado a Telegram (intento {send_attempt + 1}/{send_attempts})")
+                                                    logger.info(f"   Chat ID: {update.effective_chat.id}")
+                                                    logger.info(f"   Video filepath: {video_filepath}")
+                                                    logger.info(f"   Video file exists: {os.path.exists(video_filepath)}")
+                                                    logger.info(f"   Video file size: {os.path.getsize(video_filepath) if os.path.exists(video_filepath) else 'N/A'}")
+
+                                                    with open(video_filepath, 'rb') as video_file:
+                                                        sent_message = await context.bot.send_video(
+                                                            chat_id=update.effective_chat.id,
+                                                            video=video_file,
+                                                            caption=video_caption,
+                                                            supports_streaming=True,
+                                                        )
+
+                                                    video_sent_successfully = True
+                                                    logger.info(f"✅ Video reutilizado enviado exitosamente a Telegram en intento {send_attempt + 1}")
+                                                    break
+
+                                                except Exception as send_error:
+                                                    logger.error(f"❌ Error enviando video reutilizado a Telegram (intento {send_attempt + 1}): {send_error}")
+
+                                                    if send_attempt < send_attempts - 1:
+                                                        wait_time = 2 * (send_attempt + 1)
+                                                        logger.info(f"⏳ Reintentando envío en {wait_time} segundos...")
+                                                        await asyncio.sleep(wait_time)
+                                                    else:
+                                                        logger.error("💥 Todos los intentos de envío fallaron")
+                                                        raise send_error
+
+                                            if video_sent_successfully:
+                                                # Almacenar información del último video procesado para recuperación
+                                                context.user_data['last_video'] = {
+                                                    'filepath': video_filepath,
+                                                    'caption': video_caption,
+                                                    'timestamp': datetime.now().isoformat(),
+                                                    'model': user_model,
+                                                    'request_id': request_id,
+                                                    'prompt_optimized': prompt_optimized,
+                                                    'original_caption': original_caption
+                                                }
+
+                                                # Confirmar envío exitoso
+                                                success_msg = "✅ ¡Video enviado exitosamente!"
+                                                if prompt_optimized:
+                                                    success_msg += "\n\n🎨 Video con prompt optimizado"
+                                                await processing_msg.edit_text(success_msg)
+                                                video_sent = True
+                                                context.user_data[processing_key] = False
+                                                logger.info(f"🧹 Flag limpiado por envío exitoso de video reutilizado: chat {chat_id}")
+                                                return
+
+                                        else:
+                                            logger.warning(f"⚠️ Video marcado como descargado pero archivo no encontrado: {existing_filepath}")
+                                            # Limpiar entrada corrupta y continuar con nueva descarga
+                                            del context.user_data[downloaded_video_key]
+                                    elif downloaded_info:
                                         logger.warning(f"⚠️ Video URL ya descargado anteriormente: {video_url}")
-                                        logger.info(f"   Saltando descarga duplicada para request {request_id}")
-                                        continue
+                                        logger.info(f"   Intentando nueva descarga para request {request_id}")
+                                        # Continuar con nueva descarga (formato antiguo)
 
                                     try:
                                         # Validar URL antes de descargar
@@ -1689,8 +1767,11 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                         # Descargar el video con validación (timeout adaptado al modelo)
                                         video_bytes = wavespeed.download_video(video_url, model=user_model)
 
-                                        # Marcar que descargamos este video URL
-                                        context.user_data[downloaded_video_key] = True
+                                        # Marcar que descargamos este video URL con información del archivo
+                                        context.user_data[downloaded_video_key] = {
+                                            'timestamp': time.time(),
+                                            'filepath': None  # Se actualizará después de guardar
+                                        }
 
                                         if len(video_bytes) > 1000:  # Verificar que tenga contenido significativo
                                             logger.info(f"✅ Video descargado correctamente: {len(video_bytes)} bytes")
@@ -1706,6 +1787,11 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                                 raise Exception(f"Archivo de video no se guardó correctamente: {video_filepath}")
 
                                             logger.info(f"✅ Archivo de video verificado: {os.path.getsize(video_filepath)} bytes")
+
+                                            # Actualizar información del archivo descargado
+                                            if context.user_data.get(downloaded_video_key):
+                                                context.user_data[downloaded_video_key]['filepath'] = video_filepath
+                                                logger.debug(f"📝 Actualizada info de descarga para {request_id}")
 
                                             # Preparar el caption del video con el prompt utilizado
                                             video_caption = f"🎬 **Prompt utilizado:**\n{prompt}"
