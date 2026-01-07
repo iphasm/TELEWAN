@@ -1433,6 +1433,10 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info(f"Imagen recibida - User: {user_id}, Tipo: {media_type}, Modelo: {user_model}, Forward: {bool(message.forward_origin)}, Caption: {bool(message.caption)}")
         logger.info(f"🔄 Iniciando procesamiento para chat {chat_id}, mensaje {message_id}, tipo: {media_type}")
 
+        # Inicializar variables de optimización
+        prompt_optimized = False
+        original_caption = message.caption or ""
+
         # Procesar el prompt con optimización automática
         if not message.caption:
             # Verificar si hay DEFAULT_PROMPT configurado
@@ -1444,16 +1448,12 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 logger.info(f"🧹 Flag limpiado por falta de DEFAULT_PROMPT: chat {chat_id}")
                 return
 
-            original_caption = ""  # Caption vacío para casos sin caption
             prompt = DEFAULT_PROMPT
             logger.info(f"🔄 Procesando imagen SIN caption - usando DEFAULT_PROMPT (longitud: {len(DEFAULT_PROMPT)} caracteres)")
             logger.info(f"   Prompt preview: {DEFAULT_PROMPT[:100]}...")
         else:
-            original_caption = message.caption
-
             # Verificar si el usuario quiere optimización automática
             auto_optimize_enabled = context.user_data.get('auto_optimize', False)  # Por defecto desactivado
-            prompt_optimized = False
 
             if auto_optimize_enabled and original_caption and len(original_caption.strip()) > 0:
                 try:
