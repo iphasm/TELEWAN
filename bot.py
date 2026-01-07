@@ -6,8 +6,11 @@ import os
 import uuid
 import re
 import subprocess
+import asyncio
 from datetime import datetime
 from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, Any, Optional
 # Flask removido - ahora usamos FastAPI (ver fastapi_app.py)
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -83,6 +86,118 @@ class StaticStickerFilter:
 # Instancias de los filtros
 image_document_filter = ImageDocumentFilter()
 static_sticker_filter = StaticStickerFilter()
+
+class AsyncVideoProcessor:
+    """
+    Procesador asíncrono para manejar generación de videos de manera eficiente
+    """
+    def __init__(self, max_workers: int = 3):
+        self.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="video_processor")
+        self.active_tasks: Dict[str, asyncio.Future] = {}
+        self.logger = logging.getLogger(__name__)
+
+    async def submit_video_generation(self, request_id: str, wavespeed_api: 'WavespeedAPI',
+                                    prompt: str, image_url: str, model: str) -> str:
+        """
+        Envía una tarea de generación de video para procesamiento asíncrono
+
+        Returns:
+            request_id: ID de la solicitud para tracking
+        """
+        # Crear tarea asíncrona
+        task = asyncio.get_event_loop().run_in_executor(
+            self.executor,
+            self._process_video_generation_sync,
+            request_id, wavespeed_api, prompt, image_url, model
+        )
+
+        self.active_tasks[request_id] = task
+        self.logger.info(f"🎬 Video task {request_id} submitted to async processor")
+        return request_id
+
+    def _process_video_generation_sync(self, request_id: str, wavespeed_api: 'WavespeedAPI',
+                                     prompt: str, image_url: str, model: str) -> Dict[str, Any]:
+        """
+        Procesamiento síncrono de generación de video (ejecutado en thread pool)
+        """
+        try:
+            self.logger.info(f"🔄 Procesando video {request_id} en thread separado")
+
+            # Generar el video
+            result = wavespeed_api.generate_video(prompt, image_url, model)
+
+            if result.get('data') and result['data'].get('id'):
+                task_id = result['data']['id']
+                self.logger.info(f"✅ Video {request_id} generado exitosamente, task_id: {task_id}")
+                return {
+                    'status': 'success',
+                    'request_id': request_id,
+                    'task_id': task_id,
+                    'result': result
+                }
+            else:
+                raise Exception(f"Respuesta inválida de API: {result}")
+
+        except Exception as e:
+            self.logger.error(f"❌ Error procesando video {request_id}: {e}")
+            return {
+                'status': 'error',
+                'request_id': request_id,
+                'error': str(e)
+            }
+
+    async def wait_for_completion(self, request_id: str, timeout: int = 300) -> Optional[Dict[str, Any]]:
+        """
+        Espera a que se complete una tarea de generación de video
+
+        Args:
+            request_id: ID de la solicitud
+            timeout: Timeout en segundos
+
+        Returns:
+            Resultado de la tarea o None si timeout
+        """
+        if request_id not in self.active_tasks:
+            self.logger.error(f"Tarea {request_id} no encontrada")
+            return None
+
+        try:
+            task = self.active_tasks[request_id]
+            result = await asyncio.wait_for(task, timeout=timeout)
+            del self.active_tasks[request_id]
+            return result
+        except asyncio.TimeoutError:
+            self.logger.error(f"Timeout esperando tarea {request_id}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error esperando tarea {request_id}: {e}")
+            return None
+
+    def cancel_task(self, request_id: str) -> bool:
+        """Cancela una tarea activa"""
+        if request_id in self.active_tasks:
+            task = self.active_tasks[request_id]
+            task.cancel()
+            del self.active_tasks[request_id]
+            self.logger.info(f"🛑 Tarea {request_id} cancelada")
+            return True
+        return False
+
+    def get_active_tasks_count(self) -> int:
+        """Retorna el número de tareas activas"""
+        return len(self.active_tasks)
+
+    def cleanup_completed_tasks(self):
+        """Limpia tareas completadas del diccionario"""
+        completed = [rid for rid, task in self.active_tasks.items() if task.done()]
+        for rid in completed:
+            del self.active_tasks[rid]
+        if completed:
+            self.logger.debug(f"🧹 Limpias {len(completed)} tareas completadas")
+
+# Instancia global del procesador asíncrono
+async_video_processor = AsyncVideoProcessor(max_workers=Config.MAX_ASYNC_WORKERS)
+
 from PIL import Image
 from config import Config
 
@@ -142,6 +257,35 @@ def save_video_to_volume(video_bytes: bytes, filename: str) -> str:
     logger.info(f"Video guardado en: {filepath}")
     return filepath
 
+def calculate_smart_polling_interval(attempt: int, total_attempts: int, base_interval: float = 0.5) -> float:
+    """
+    Calcula intervalos de polling inteligentes con exponential backoff adaptativo
+
+    Args:
+        attempt: Número de intento actual (0-based)
+        total_attempts: Número total de intentos permitidos
+        base_interval: Intervalo base en segundos
+
+    Returns:
+        Intervalo de polling en segundos
+    """
+    # Estrategia adaptativa:
+    # - Primeros 10 intentos: polling rápido (0.5s) para detectar cambios tempranos
+    # - Intentos 10-30: polling medio (1-2s) con ligero backoff
+    # - Intentos 30+: polling lento (3-5s) con exponential backoff
+
+    if attempt < 10:
+        # Polling rápido inicial para detectar cambios inmediatos
+        return base_interval
+    elif attempt < 30:
+        # Polling medio con backoff lineal
+        return min(base_interval * 2, base_interval + (attempt - 10) * 0.1)
+    else:
+        # Polling lento con exponential backoff
+        # Fórmula: base_interval * 2^(attempt/20) con límite superior
+        backoff_factor = 2 ** ((attempt - 30) / 20)
+        return min(base_interval * 4 * backoff_factor, 10.0)  # Máximo 10 segundos
+
 def cleanup_old_downloads(context, chat_id):
     """
     Limpia entradas antiguas de descargas del contexto del usuario para evitar memory leaks
@@ -186,7 +330,7 @@ class WavespeedAPI:
             'Content-Type': 'application/json'
         }
 
-    def generate_video(self, prompt: str, image_url: str = None, model: str = None) -> dict:
+    def generate_video(self, prompt: str, image_url: str = None, model: str = None, webhook_url: str = None) -> dict:
         """
         Genera un video usando diferentes modelos de Wavespeed AI
 
@@ -194,6 +338,7 @@ class WavespeedAPI:
             prompt: Descripción del video a generar
             image_url: URL de la imagen de referencia (opcional para text-to-video)
             model: Modelo a usar ('ultra_fast', 'fast', 'quality', 'text_to_video')
+            webhook_url: URL de webhook para notificaciones (si soportado por la API)
         """
         if model is None or model not in Config.AVAILABLE_MODELS:
             model = Config.DEFAULT_MODEL
@@ -217,6 +362,11 @@ class WavespeedAPI:
             "negative_prompt": Config.NEGATIVE_PROMPT,
             "seed": -1
         }
+
+        # Agregar webhook si está configurado y soportado por la API
+        if webhook_url:
+            payload["webhook_url"] = webhook_url
+            logger.info(f"Webhook configurado para notificaciones: {webhook_url}")
 
         # Solo incluir imagen si no es text-to-video o si se proporciona
         if image_url and model != 'text_to_video':
@@ -1461,19 +1611,48 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         # Inicializar API de Wavespeed
         wavespeed = WavespeedAPI()
 
-        # Generar video
-        logger.info(f"Generando video con prompt: {prompt[:100]}...")
+        # Usar procesamiento asíncrono inteligente
+        use_async_processing = Config.USE_ASYNC_PROCESSING
 
-        # Llamar a la API con el modelo seleccionado
-        result = wavespeed.generate_video(prompt, photo_file_url, model=user_model)
+        if use_async_processing:
+            logger.info(f"🚀 Usando procesamiento asíncrono inteligente")
 
-        if result.get('data') and result['data'].get('id'):
+            # Generar ID único para esta solicitud
+            async_request_id = f"async_{chat_id}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+
+            # Enviar tarea para procesamiento asíncrono
+            await async_video_processor.submit_video_generation(
+                async_request_id, wavespeed, prompt, photo_file_url, user_model
+            )
+
+            # Esperar resultado con timeout inteligente
+            result = await async_video_processor.wait_for_completion(async_request_id, timeout=Config.ASYNC_TASK_TIMEOUT)
+
+            if not result or result.get('status') != 'success':
+                error_msg = result.get('error', 'Error desconocido en procesamiento asíncrono') if result else 'Timeout en procesamiento asíncrono'
+                await processing_msg.edit_text(f"❌ Error en generación asíncrona: {error_msg}")
+                context.user_data[processing_key] = False
+                return
+
+            # Extraer el result de la respuesta asíncrona
+            api_result = result['result']
+        else:
+            # Método tradicional de generación síncrona
+            logger.info(f"🔄 Usando procesamiento síncrono tradicional")
+            logger.info(f"Generando video con prompt: {prompt[:100]}...")
+
+            # Llamar a la API con el modelo seleccionado
+            api_result = wavespeed.generate_video(prompt, photo_file_url, model=user_model)
+
+        if api_result.get('data') and api_result['data'].get('id'):
             request_id = result['data']['id']
             logger.info(f"Task submitted successfully. Request ID: {request_id}")
 
             # Esperar a que se complete con lógica mejorada y robusta
             attempt = 0
             video_sent = False
+            consecutive_errors = 0
+            max_consecutive_errors = 3
 
             while attempt < Config.MAX_POLLING_ATTEMPTS and not video_sent:
                 try:
@@ -1646,10 +1825,20 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
                 except Exception as polling_error:
                     logger.error(f"Error during polling (attempt {attempt + 1}): {polling_error}")
-                    # No romper el loop, continuar intentando
+                    consecutive_errors += 1
+
+                    # Si hay muchos errores consecutivos, aumentar el intervalo
+                    if consecutive_errors >= max_consecutive_errors:
+                        logger.warning(f"Múltiples errores consecutivos ({consecutive_errors}), aumentando intervalo de polling")
+                        # Resetear contador después de logging
+                        consecutive_errors = max_consecutive_errors - 1
+
+                # Calcular intervalo de polling inteligente
+                polling_interval = calculate_smart_polling_interval(attempt, Config.MAX_POLLING_ATTEMPTS, Config.POLLING_INTERVAL)
+                logger.debug(f"⏱️  Esperando {polling_interval:.1f}s antes del siguiente check (intento {attempt + 1})")
 
                 # Esperar antes del siguiente check
-                time.sleep(Config.POLLING_INTERVAL)
+                time.sleep(polling_interval)
                 attempt += 1
 
             # Si llegamos aquí, agotamos los intentos

@@ -222,6 +222,25 @@ async def health_check():
 
     return response
 
+@app.post("/wavespeed-webhook", tags=["Wavespeed"])
+async def wavespeed_webhook(request: Request, background_tasks: BackgroundTasks):
+    """
+    Endpoint para recibir webhooks de Wavespeed AI cuando los videos estén listos
+    (Funcionalidad futura - Wavespeed aún no soporta webhooks)
+    """
+    try:
+        webhook_data = await request.json()
+        logger.info(f"🎣 Webhook recibido de Wavespeed: {webhook_data}")
+
+        # Aquí iría la lógica para procesar notificaciones de Wavespeed
+        # Por ahora solo loggeamos y retornamos OK
+
+        return {"status": "received", "message": "Webhook processed successfully"}
+
+    except Exception as e:
+        logger.error(f"❌ Error procesando webhook de Wavespeed: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing webhook: {str(e)}")
+
 @app.post("/webhook", tags=["Telegram"])
 async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     """

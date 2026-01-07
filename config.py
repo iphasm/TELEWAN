@@ -29,8 +29,13 @@ class Config:
     # Configuración del bot
     MAX_VIDEO_DURATION = 8  # segundos
     ASPECT_RATIO = "16:9"
-    MAX_POLLING_ATTEMPTS = 240  # máximo ~2 minutos de espera (240 * 0.5s) - más tiempo para videos complejos
-    POLLING_INTERVAL = 0.5  # segundos entre checks (como en el ejemplo)
+    MAX_POLLING_ATTEMPTS = 240  # máximo ~4-5 minutos de espera con polling inteligente
+    POLLING_INTERVAL = 0.5  # segundos base entre checks
+
+    # Configuración de procesamiento asíncrono
+    USE_ASYNC_PROCESSING = os.getenv('USE_ASYNC_PROCESSING', 'true').lower() == 'true'
+    MAX_ASYNC_WORKERS = int(os.getenv('MAX_ASYNC_WORKERS', '3'))  # Número máximo de workers asíncronos
+    ASYNC_TASK_TIMEOUT = int(os.getenv('ASYNC_TASK_TIMEOUT', '300'))  # Timeout para tareas asíncronas (segundos)
 
     # Negative prompt automática para todas las solicitudes (configurable via env)
     NEGATIVE_PROMPT = os.getenv('NEGATIVE_PROMPT', '')
