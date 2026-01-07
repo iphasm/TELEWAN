@@ -195,11 +195,11 @@ class AsyncVideoProcessor:
         if completed:
             self.logger.debug(f"🧹 Limpias {len(completed)} tareas completadas")
 
-# Instancia global del procesador asíncrono
-async_video_processor = AsyncVideoProcessor(max_workers=Config.MAX_ASYNC_WORKERS)
-
 from PIL import Image
 from config import Config
+
+# Instancia global del procesador asíncrono (inicializada después de importar Config)
+async_video_processor = AsyncVideoProcessor(max_workers=Config.MAX_ASYNC_WORKERS)
 
 # Configuración del logging
 logging.basicConfig(
