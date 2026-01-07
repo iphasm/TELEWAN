@@ -1645,7 +1645,7 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             api_result = wavespeed.generate_video(prompt, photo_file_url, model=user_model)
 
         if api_result.get('data') and api_result['data'].get('id'):
-            request_id = result['data']['id']
+            request_id = api_result['data']['id']
             logger.info(f"Task submitted successfully. Request ID: {request_id}")
 
             # Esperar a que se complete con lógica mejorada y robusta
