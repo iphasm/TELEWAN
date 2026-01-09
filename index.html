@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SynthClip - Generador de Videos con IA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card-gradient {
+            background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
+        }
+        .upload-area {
+            border: 2px dashed #cbd5e0;
+            transition: all 0.3s ease;
+        }
+        .upload-area:hover, .upload-area.dragover {
+            border-color: #667eea;
+            background-color: rgba(102, 126, 234, 0.05);
+        }
+        .pulse-animation {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen">
+    <!-- Header -->
+    <header class="container mx-auto px-4 py-8">
+        <div class="text-center">
+            <h1 class="text-5xl font-bold text-white mb-4 flex items-center justify-center gap-3">
+                <i data-lucide="video" class="w-12 h-12"></i>
+                SynthClip
+            </h1>
+            <p class="text-xl text-white/80 mb-8">Transforma tus fotos en videos increíbles con IA</p>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 pb-16">
+        <div class="max-w-4xl mx-auto">
+            <!-- Upload Card -->
+            <div class="card-gradient backdrop-blur-lg rounded-2xl p-8 mb-8 fade-in">
+                <h2 class="text-2xl font-semibold text-white mb-6 flex items-center gap-2">
+                    <i data-lucide="upload" class="w-6 h-6"></i>
+                    Sube tu imagen
+                </h2>
+
+                <div id="uploadArea" class="upload-area rounded-xl p-12 text-center cursor-pointer">
+                    <div id="uploadContent">
+                        <i data-lucide="image" class="w-16 h-16 text-gray-400 mx-auto mb-4"></i>
+                        <p class="text-white text-lg mb-2">Arrastra y suelta tu imagen aquí</p>
+                        <p class="text-white/70 text-sm mb-4">o haz clic para seleccionar</p>
+                        <button class="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-lg transition-colors">
+                            Seleccionar imagen
+                        </button>
+                        <p class="text-white/50 text-xs mt-4">Soporta JPG, PNG, WebP (máx. 10MB)</p>
+                    </div>
+                    <div id="imagePreview" class="hidden">
+                        <img id="previewImg" class="max-w-full max-h-64 mx-auto rounded-lg shadow-lg">
+                        <button id="removeImage" class="mt-4 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors">
+                            <i data-lucide="x" class="w-4 h-4 inline mr-2"></i>
+                            Remover imagen
+                        </button>
+                    </div>
+                </div>
+                <input type="file" id="imageInput" accept="image/*" class="hidden">
+            </div>
+
+            <!-- Options Card -->
+            <div class="card-gradient backdrop-blur-lg rounded-2xl p-8 mb-8 fade-in">
+                <h2 class="text-2xl font-semibold text-white mb-6 flex items-center gap-2">
+                    <i data-lucide="settings" class="w-6 h-6"></i>
+                    Configuración del video
+                </h2>
+
+                <!-- Model Selection -->
+                <div class="mb-6">
+                    <label class="block text-white text-lg mb-3">Modelo de IA:</label>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="model-option bg-white/10 rounded-lg p-4 cursor-pointer transition-all hover:bg-white/20"
+                             data-model="ultra_fast">
+                            <div class="flex items-center mb-2">
+                                <input type="radio" name="model" value="ultra_fast" class="mr-3" checked>
+                                <span class="text-white font-semibold">Ultra Fast 480p</span>
+                            </div>
+                            <p class="text-white/70 text-sm">Video rápido, ideal para pruebas</p>
+                            <p class="text-white/50 text-xs">⚡ Muy rápido • 480p • 8s</p>
+                        </div>
+                        <div class="model-option bg-white/10 rounded-lg p-4 cursor-pointer transition-all hover:bg-white/20"
+                             data-model="fast">
+                            <div class="flex items-center mb-2">
+                                <input type="radio" name="model" value="fast" class="mr-3">
+                                <span class="text-white font-semibold">Fast 480p</span>
+                            </div>
+                            <p class="text-white/70 text-sm">Mejor calidad que Ultra Fast</p>
+                            <p class="text-white/50 text-xs">🚀 Rápido • 480p • 8s</p>
+                        </div>
+                        <div class="model-option bg-white/10 rounded-lg p-4 cursor-pointer transition-all hover:bg-white/20"
+                             data-model="quality">
+                            <div class="flex items-center mb-2">
+                                <input type="radio" name="model" value="quality" class="mr-3">
+                                <span class="text-white font-semibold">Quality 720p</span>
+                            </div>
+                            <p class="text-white/70 text-sm">Alta calidad para resultados finales</p>
+                            <p class="text-white/50 text-xs">🎯 Alta calidad • 720p • 8s</p>
+                        </div>
+                        <div class="model-option bg-white/10 rounded-lg p-4 cursor-pointer transition-all hover:bg-white/20"
+                             data-model="text_to_video">
+                            <div class="flex items-center mb-2">
+                                <input type="radio" name="model" value="text_to_video" class="mr-3">
+                                <span class="text-white font-semibold">Text to Video</span>
+                            </div>
+                            <p class="text-white/70 text-sm">Genera video solo desde texto</p>
+                            <p class="text-white/50 text-xs">📝 Solo texto • 480p • 8s</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Prompt Input -->
+                <div class="mb-6">
+                    <label for="prompt" class="block text-white text-lg mb-3">Describe el video que quieres crear:</label>
+                    <textarea
+                        id="prompt"
+                        placeholder="Ej: Una mujer caminando por una ciudad futurista con coches voladores, iluminación dramática, movimiento de cámara suave..."
+                        class="w-full bg-white/10 border border-white/20 rounded-lg p-4 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 resize-none"
+                        rows="4"></textarea>
+                    <p class="text-white/50 text-sm mt-2">
+                        Sé descriptivo: incluye movimiento, iluminación, estilo y composición
+                    </p>
+                </div>
+
+                <!-- Auto Optimize Toggle -->
+                <div class="flex items-center justify-between mb-6">
+                    <div>
+                        <h3 class="text-white font-semibold mb-1">Optimización automática con IA</h3>
+                        <p class="text-white/70 text-sm">Deja que la IA mejore tu descripción para mejores resultados</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="autoOptimize" class="sr-only peer">
+                        <div class="w-11 h-6 bg-white/20 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-white/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Generate Button -->
+            <div class="text-center mb-8">
+                <button id="generateBtn" class="bg-white text-purple-600 font-bold py-4 px-12 rounded-full text-xl hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span id="generateText">
+                        <i data-lucide="play" class="w-6 h-6 inline mr-2"></i>
+                        Generar Video
+                    </span>
+                    <span id="generatingText" class="hidden">
+                        <i data-lucide="loader" class="w-6 h-6 inline mr-2 animate-spin"></i>
+                        Generando video...
+                    </span>
+                </button>
+            </div>
+
+            <!-- Progress and Result -->
+            <div id="progressSection" class="hidden card-gradient backdrop-blur-lg rounded-2xl p-8 mb-8 fade-in">
+                <div class="text-center">
+                    <div class="mb-6">
+                        <i data-lucide="loader" class="w-12 h-12 text-white animate-spin mx-auto mb-4"></i>
+                        <h3 class="text-2xl font-semibold text-white mb-2">Procesando tu video</h3>
+                        <p id="progressText" class="text-white/70">Analizando imagen y generando prompt optimizado...</p>
+                    </div>
+                    <div class="bg-white/10 rounded-full h-3 mb-4">
+                        <div id="progressBar" class="bg-gradient-to-r from-blue-400 to-purple-500 h-3 rounded-full transition-all duration-500" style="width: 10%"></div>
+                    </div>
+                    <p class="text-white/50 text-sm">Esto puede tomar 1-5 minutos</p>
+                </div>
+            </div>
+
+            <!-- Result Section -->
+            <div id="resultSection" class="hidden card-gradient backdrop-blur-lg rounded-2xl p-8 fade-in">
+                <h2 class="text-2xl font-semibold text-white mb-6 flex items-center gap-2">
+                    <i data-lucide="check-circle" class="w-6 h-6 text-green-400"></i>
+                    ¡Video generado exitosamente!
+                </h2>
+
+                <div class="mb-6">
+                    <h3 class="text-white font-semibold mb-2">Prompt utilizado:</h3>
+                    <p id="usedPrompt" class="bg-white/10 rounded-lg p-4 text-white/80 text-sm"></p>
+                </div>
+
+                <div class="text-center">
+                    <video id="resultVideo" controls class="max-w-full rounded-lg shadow-lg mx-auto mb-6" style="max-height: 400px;">
+                        Tu navegador no soporta el elemento video.
+                    </video>
+
+                    <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                        <button id="downloadBtn" class="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg transition-colors flex items-center justify-center gap-2">
+                            <i data-lucide="download" class="w-5 h-5"></i>
+                            Descargar Video
+                        </button>
+                        <button id="newVideoBtn" class="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-lg transition-colors">
+                            <i data-lucide="refresh-cw" class="w-5 h-5 inline mr-2"></i>
+                            Crear Nuevo Video
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Section -->
+            <div id="errorSection" class="hidden card-gradient backdrop-blur-lg rounded-2xl p-8 fade-in">
+                <div class="text-center">
+                    <i data-lucide="alert-circle" class="w-12 h-12 text-red-400 mx-auto mb-4"></i>
+                    <h3 class="text-xl font-semibold text-white mb-2">Error al generar el video</h3>
+                    <p id="errorText" class="text-white/70 mb-6"></p>
+                    <button id="retryBtn" class="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-lg transition-colors">
+                        <i data-lucide="refresh-cw" class="w-5 h-5 inline mr-2"></i>
+                        Intentar de nuevo
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="container mx-auto px-4 py-8 text-center">
+        <p class="text-white/60 text-sm">
+            Powered by SynthClip • IA avanzada con Wavespeed
+        </p>
+    </footer>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // DOM Elements
+        const uploadArea = document.getElementById('uploadArea');
+        const uploadContent = document.getElementById('uploadContent');
+        const imagePreview = document.getElementById('imagePreview');
+        const previewImg = document.getElementById('previewImg');
+        const imageInput = document.getElementById('imageInput');
+        const removeImage = document.getElementById('removeImage');
+        const promptTextarea = document.getElementById('prompt');
+        const autoOptimizeCheckbox = document.getElementById('autoOptimize');
+        const generateBtn = document.getElementById('generateBtn');
+        const generateText = document.getElementById('generateText');
+        const generatingText = document.getElementById('generatingText');
+        const progressSection = document.getElementById('progressSection');
+        const progressText = document.getElementById('progressText');
+        const progressBar = document.getElementById('progressBar');
+        const resultSection = document.getElementById('resultSection');
+        const resultVideo = document.getElementById('resultVideo');
+        const usedPrompt = document.getElementById('usedPrompt');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const newVideoBtn = document.getElementById('newVideoBtn');
+        const errorSection = document.getElementById('errorSection');
+        const errorText = document.getElementById('errorText');
+        const retryBtn = document.getElementById('retryBtn');
+        const modelOptions = document.querySelectorAll('.model-option');
+
+        // State
+        let selectedImage = null;
+        let selectedModel = 'ultra_fast';
+        let currentTaskId = null;
+        let videoUrl = null;
+
+        // Upload functionality
+        uploadArea.addEventListener('click', () => {
+            imageInput.click();
+        });
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        imageInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        removeImage.addEventListener('click', () => {
+            selectedImage = null;
+            imagePreview.classList.add('hidden');
+            uploadContent.classList.remove('hidden');
+            updateGenerateButton();
+        });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) {
+                alert('Por favor selecciona un archivo de imagen válido.');
+                return;
+            }
+
+            if (file.size > 10 * 1024 * 1024) { // 10MB
+                alert('La imagen es demasiado grande. Máximo 10MB.');
+                return;
+            }
+
+            selectedImage = file;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImg.src = e.target.result;
+                uploadContent.classList.add('hidden');
+                imagePreview.classList.remove('hidden');
+                updateGenerateButton();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Model selection
+        modelOptions.forEach(option => {
+            option.addEventListener('click', () => {
+                const model = option.dataset.model;
+                selectedModel = model;
+
+                // Update radio buttons
+                document.querySelectorAll('input[name="model"]').forEach(radio => {
+                    radio.checked = radio.value === model;
+                });
+
+                // Update visual selection
+                modelOptions.forEach(opt => opt.classList.remove('ring-2', 'ring-white'));
+                option.classList.add('ring-2', 'ring-white');
+            });
+        });
+
+        // Initialize first model as selected
+        document.querySelector('.model-option[data-model="ultra_fast"]').classList.add('ring-2', 'ring-white');
+
+        // Generate button state
+        function updateGenerateButton() {
+            const hasImage = selectedImage !== null;
+            const hasPrompt = promptTextarea.value.trim().length > 0;
+            const isTextToVideo = selectedModel === 'text_to_video';
+
+            generateBtn.disabled = isTextToVideo ? !hasPrompt : !(hasImage && hasPrompt);
+        }
+
+        promptTextarea.addEventListener('input', updateGenerateButton);
+        document.querySelectorAll('input[name="model"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                selectedModel = e.target.value;
+                updateGenerateButton();
+            });
+        });
+
+        // Generate video
+        generateBtn.addEventListener('click', async () => {
+            if (generateBtn.disabled) return;
+
+            try {
+                // Show progress
+                progressSection.classList.remove('hidden');
+                resultSection.classList.add('hidden');
+                errorSection.classList.add('hidden');
+                generateText.classList.add('hidden');
+                generatingText.classList.remove('hidden');
+                generateBtn.disabled = true;
+
+                // Prepare form data
+                const formData = new FormData();
+                if (selectedImage && selectedModel !== 'text_to_video') {
+                    formData.append('image', selectedImage);
+                }
+                formData.append('prompt', promptTextarea.value.trim());
+                formData.append('model', selectedModel);
+                formData.append('auto_optimize', autoOptimizeCheckbox.checked);
+
+                // Start generation
+                progressText.textContent = 'Iniciando generación de video...';
+                progressBar.style.width = '10%';
+
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Error ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                currentTaskId = result.task_id;
+
+                // Poll for status
+                await pollStatus();
+
+            } catch (error) {
+                showError(error.message);
+            }
+        });
+
+        async function pollStatus() {
+            const maxAttempts = 240; // ~4 minutes
+            let attempts = 0;
+
+            while (attempts < maxAttempts) {
+                try {
+                    const response = await fetch(`/status/${currentTaskId}`);
+                    const status = await response.json();
+
+                    if (status.status === 'completed') {
+                        showResult(status);
+                        return;
+                    } else if (status.status === 'failed') {
+                        throw new Error(status.error || 'La generación del video falló');
+                    }
+
+                    // Update progress
+                    const progressPercent = Math.min(10 + (attempts / maxAttempts) * 80, 90);
+                    progressBar.style.width = `${progressPercent}%`;
+
+                    const messages = [
+                        'Analizando imagen y generando prompt optimizado...',
+                        'Procesando con IA avanzada...',
+                        'Generando frames del video...',
+                        'Aplicando efectos y composición...',
+                        'Finalizando video...'
+                    ];
+                    progressText.textContent = messages[Math.floor((attempts / maxAttempts) * messages.length)];
+
+                    attempts++;
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+
+                } catch (error) {
+                    throw new Error('Error al verificar el estado del video');
+                }
+            }
+
+            throw new Error('Timeout: La generación del video tomó demasiado tiempo');
+        }
+
+        function showResult(result) {
+            progressSection.classList.add('hidden');
+            resultSection.classList.remove('hidden');
+            errorSection.classList.add('hidden');
+
+            usedPrompt.textContent = result.prompt_used || promptTextarea.value;
+            resultVideo.src = result.video_url;
+            videoUrl = result.video_url;
+
+            generateText.classList.remove('hidden');
+            generatingText.classList.add('hidden');
+            generateBtn.disabled = false;
+        }
+
+        function showError(message) {
+            progressSection.classList.add('hidden');
+            resultSection.classList.add('hidden');
+            errorSection.classList.remove('hidden');
+
+            errorText.textContent = message;
+
+            generateText.classList.remove('hidden');
+            generatingText.classList.add('hidden');
+            generateBtn.disabled = false;
+        }
+
+        // Download video
+        downloadBtn.addEventListener('click', () => {
+            if (videoUrl) {
+                const a = document.createElement('a');
+                a.href = videoUrl;
+                a.download = `synthclip-video-${Date.now()}.mp4`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+        });
+
+        // New video
+        newVideoBtn.addEventListener('click', () => {
+            selectedImage = null;
+            imagePreview.classList.add('hidden');
+            uploadContent.classList.remove('hidden');
+            promptTextarea.value = '';
+            autoOptimizeCheckbox.checked = false;
+            progressSection.classList.add('hidden');
+            resultSection.classList.add('hidden');
+            errorSection.classList.add('hidden');
+            updateGenerateButton();
+        });
+
+        // Retry
+        retryBtn.addEventListener('click', () => {
+            errorSection.classList.add('hidden');
+        });
+
+        // Initialize
+        updateGenerateButton();
+    </script>
+</body>
+</html>

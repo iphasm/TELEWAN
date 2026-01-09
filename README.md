@@ -1,33 +1,65 @@
-# 🤖 Bot de Telegram - Foto a Video con IA
+# 🎬 SynthClip - Generador de Videos con IA
 
-Un bot de Telegram que transforma fotografías en videos usando IA, específicamente el modelo **Wan 2.2 I2V 480p Ultra Fast** de Wavespeed.
+SynthClip es una aplicación web que transforma fotografías en videos usando IA avanzada, específicamente el modelo **Wan 2.2 I2V** de Wavespeed. Disponible tanto como bot de Telegram como interfaz web moderna.
 
 ## 🚀 Características
 
-- 📸 **Transformación de fotos a videos**: Convierte imágenes estáticas en videos animados
-- 🎬 **IA avanzada**: Usa múltiples modelos Wan 2.2 de Wavespeed (Ultra Fast, Fast, Quality, Text-to-Video)
-- 🤖 **Optimización automática de prompts**: IA analiza tus captions y los mejora automáticamente para mejores resultados
-- 📝 **Prompts inteligentes**: Utiliza el caption de la foto como descripción, con optimización automática opcional
-- 🚫 **Prevención de duplicados**: Sistema inteligente que evita procesamiento múltiple del mismo mensaje
-- ⚡ **Procesamiento ultra rápido**: Optimizado para respuestas rápidas con polling eficiente y robusto
-- ⏱️ **Videos de 8 segundos**: Duración extendida para mejores resultados
-- 💾 **Almacenamiento persistente**: Fotos y videos guardados en volumen con nombres únicos
-- 🔄 **Soporte para forwards**: Procesa fotos forwardeadas que tengan captions descriptivos
-- 🚫 **Negative prompt automática**: Filtros integrados para evitar elementos no deseados
-- 🔒 **Seguro**: Manejo adecuado de archivos y configuración
-- 🚫 **Prevención de duplicados**: Sistema inteligente que evita procesamiento múltiple del mismo mensaje
-- 🛠️ **Manejo robusto de errores**: Logging detallado y validaciones exhaustivas para diagnóstico rápido
-- 📥 **Descarga inteligente de videos**: Sistema de reintentos progresivos con manejo específico de errores de red
-- 🔍 **Debugging avanzado**: Trazabilidad completa del procesamiento de mensajes para identificar problemas
-- 🎯 **Múltiples formatos**: Soporta fotos, documentos de imagen y stickers estáticos
+### 🎨 **Interfaz Web Moderna**
+- 🌐 **Aplicación web intuitiva**: Interfaz moderna y responsive para generar videos desde el navegador
+- 📸 **Subida de fotos**: Soporte completo para arrastrar y soltar o seleccionar imágenes
+- ✍️ **Editor de prompts**: Campo de texto avanzado con sugerencias y ejemplos
+- 🎯 **Selección de modelos**: Interfaz visual para elegir entre diferentes modelos de IA
+
+### 🤖 **IA Avanzada**
+- 🎬 **Múltiples modelos**: Wan 2.2 I2V (Ultra Fast 480p, Fast 480p, Quality 720p, Text-to-Video)
+- 🤖 **Optimización automática**: IA analiza tus imágenes y mejora los prompts automáticamente
+- 📝 **Prompts inteligentes**: Usa descripciones detalladas para generar videos precisos
+- 🚫 **Filtros avanzados**: Negative prompts automáticos para calidad superior
+- ⏱️ **Videos de 8 segundos**: Duración optimizada para contenido dinámico
+
+### 🔧 **Características Técnicas**
+- ⚡ **Procesamiento asíncrono**: Arquitectura eficiente para múltiples usuarios simultáneos
+- 🔄 **Sistema de colas**: Manejo inteligente de solicitudes para estabilidad
+- 💾 **Almacenamiento optimizado**: Gestión eficiente de archivos y videos generados
+- 🛡️ **Manejo robusto de errores**: Logging detallado y recuperación automática
+- 📱 **Responsive design**: Funciona perfectamente en desktop y móvil
+
+### 📡 **Integraciones**
+- 🤖 **Bot de Telegram**: Versión completa como bot de Telegram (legacy)
+- 🚂 **Despliegue en Railway**: Optimizado para Railway con Docker
+- 🔗 **API REST**: Backend FastAPI para integraciones futuras
 
 ## 📋 Requisitos
 
 - Python 3.8+
-- Token de bot de Telegram (de @BotFather)
 - API Key de Wavespeed
+- Token de bot de Telegram (opcional - solo para versión bot)
 
-## 🛠️ Instalación
+## 🚀 Inicio Rápido - Interfaz Web
+
+### Opción 1: Despliegue en Railway (Recomendado)
+
+1. **Haz fork de este repositorio** en GitHub
+
+2. **Conecta con Railway:**
+   - Ve a [Railway.app](https://railway.app) y crea una cuenta
+   - Conecta tu repositorio GitHub
+   - Railway detectará automáticamente el Dockerfile
+
+3. **Configura las variables de entorno:**
+   ```bash
+   railway variables set WAVESPEED_API_KEY=tu_api_key_aqui
+   railway variables set VOLUME_PATH=/app/storage
+   ```
+
+4. **Despliega:**
+   ```bash
+   railway deploy
+   ```
+
+5. **¡Listo!** Tu aplicación web estará disponible en la URL de Railway
+
+### Opción 2: Ejecución Local
 
 1. **Clona o descarga este repositorio**
 
@@ -39,14 +71,47 @@ Un bot de Telegram que transforma fotografías en videos usando IA, específicam
 3. **Configura las variables de entorno:**
    Crea un archivo `.env` en la raíz del proyecto con:
    ```env
-   # Token del bot de Telegram (obtenlo de @BotFather)
-   TELEGRAM_BOT_TOKEN=tu_token_aqui
+   # API Key de Wavespeed (OBLIGATORIO)
+   WAVESPEED_API_KEY=tu_api_key_aqui
 
-# ID de usuario autorizado (opcional - si no se configura, permite a todos)
-ALLOWED_USER_ID=tu_user_id_aqui
+   # Variables opcionales para la interfaz web
+   VOLUME_PATH=./storage
+   PORT=8000
+   ```
 
-# API Key de Wavespeed
-WAVESPEED_API_KEY=tu_api_key_aqui
+4. **Ejecuta la aplicación web:**
+   ```bash
+   python web_app.py
+   ```
+
+5. **Abre tu navegador** en `http://localhost:8000`
+
+### 📱 Cómo Usar la Interfaz Web
+
+1. **Sube tu imagen:** Arrastra y suelta o haz clic para seleccionar una foto
+2. **Elige el modelo:** Selecciona entre Ultra Fast, Fast, Quality o Text-to-Video
+3. **Escribe tu prompt:** Describe el video que quieres crear (sé específico sobre movimiento y estilo)
+4. **Opcional:** Activa la optimización automática con IA para mejorar tu descripción
+5. **Genera:** Haz clic en "Generar Video" y espera (1-5 minutos)
+6. **Descarga:** Una vez completado, descarga tu video generado
+
+### 🎬 **Modelos Disponibles**
+
+| Modelo | Resolución | Velocidad | Mejor para |
+|--------|------------|-----------|------------|
+| **Ultra Fast** | 480p | ⚡ Muy rápida | Pruebas y previews |
+| **Fast** | 480p | 🚀 Rápida | Buen balance calidad/velocidad |
+| **Quality** | 720p | 🎯 Alta calidad | Videos finales profesionales |
+| **Text to Video** | 480p | ⚡ Muy rápida | Generación solo desde texto |
+
+**💡 Consejos para mejores resultados:**
+- Incluye detalles sobre movimiento, iluminación y composición
+- Activa la optimización automática para descripciones mejoradas
+- Para Text-to-Video no necesitas subir imagen
+
+### 🤖 Versión Bot de Telegram (Legacy)
+
+Para usar como bot de Telegram, configura adicionalmente:
 
 # URL base de la API de Wavespeed (opcional)
 WAVESPEED_BASE_URL=https://api.wavespeed.ai
@@ -344,21 +409,35 @@ Las contribuciones son bienvenidas. Por favor:
 
 ## 🚂 Despliegue en Railway
 
-### ⚡ Modos de Operación
+SynthClip está optimizado para desplegarse fácilmente en Railway usando Docker.
 
-El bot soporta dos modos de operación:
+### 🚀 Despliegue Automático
 
-#### 1. **Polling** (Modo por defecto - Fácil setup)
-- El bot consulta periódicamente a Telegram por nuevas actualizaciones
-- Más simple de configurar, pero menos eficiente
-- Ideal para desarrollo y testing
+1. **Conecta tu repositorio:**
+   ```bash
+   railway login
+   railway link  # Selecciona o crea un proyecto
+   ```
 
-#### 2. **Webhook** (Modo recomendado - Mejor rendimiento)
-- Telegram envía actualizaciones directamente al bot
-- Más eficiente y escalable
-- Requiere configuración adicional pero elimina polling constante
+2. **Configura las variables de entorno:**
+   ```bash
+   railway variables set WAVESPEED_API_KEY=tu_api_key_aqui
+   railway variables set VOLUME_PATH=/app/storage
+   ```
 
-### Si ya tienes repositorio y volumen creados:
+3. **Crea volumen para almacenamiento:**
+   ```bash
+   railway volume create synthclip-storage
+   ```
+
+4. **Despliega:**
+   ```bash
+   railway deploy
+   ```
+
+5. **¡Listo!** Railway detectará automáticamente el Dockerfile y desplegará tu aplicación web.
+
+### 🔧 Verificación del Despliegue
 
 1. **Conectar al proyecto:**
    ```bash
