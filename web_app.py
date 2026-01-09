@@ -248,14 +248,30 @@ async def process_video_generation(
                         await asyncio.sleep(1)
                         continue
 
-                    status = status_result.get("status")
+                    # Handle nested response structure like the original bot
+                    if status_result.get('data'):
+                        task_data = status_result['data']
+                        status = task_data.get('status')
+                        print(f"📊 Nested status found: {status}")
+                    else:
+                        status = status_result.get("status")
+                        print(f"📊 Direct status found: {status}")
+
                     if status == "completed":
-                        # Check for video in different possible fields
-                        video_url = (status_result.get("video_url") or
-                                   status_result.get("video") or
-                                   status_result.get("output") or
-                                   status_result.get("result"))
-                        print(f"🎬 Video URL found: {video_url}")
+                        # Check for video URL in nested structure (like original bot)
+                        if status_result.get('data') and status_result['data'].get('outputs'):
+                            task_data = status_result['data']
+                            if len(task_data['outputs']) > 0:
+                                video_url = task_data['outputs'][0]
+                                print(f"🎬 Video URL found in nested outputs: {video_url}")
+                        else:
+                            # Fallback to direct fields
+                            video_url = (status_result.get("video_url") or
+                                       status_result.get("video") or
+                                       status_result.get("output") or
+                                       status_result.get("result"))
+                            print(f"🎬 Video URL found in direct fields: {video_url}")
+
                         if video_url:
                             # Download and save video
                             task["progress"] = 80
@@ -279,7 +295,11 @@ async def process_video_generation(
                             return
 
                     elif status == "failed":
-                        error_msg = status_result.get("error", "Video generation failed on API side")
+                        # Check for error in nested structure too
+                        if status_result.get('data'):
+                            error_msg = status_result['data'].get("error", "Video generation failed on API side")
+                        else:
+                            error_msg = status_result.get("error", "Video generation failed on API side")
                         print(f"❌ Video generation failed: {error_msg}")
                         raise Exception(f"Video generation failed: {error_msg}")
 
