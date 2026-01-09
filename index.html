@@ -256,7 +256,7 @@
                 </div>
 
                 <!-- Audio Generation Toggle -->
-                <div class="flex items-center justify-between mb-6 p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
+                <div class="flex items-center justify-between mb-4 p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
                     <div class="flex-1">
                         <h3 class="text-white font-semibold mb-1 flex items-center gap-2">
                             <i data-lucide="music" class="w-5 h-5 text-emerald-400"></i>
@@ -268,6 +268,22 @@
                     <label class="relative inline-flex items-center cursor-pointer ml-4">
                         <input type="checkbox" id="addAudio" class="sr-only peer">
                         <div class="w-12 h-7 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-500/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-emerald-500 peer-checked:to-teal-500"></div>
+                    </label>
+                </div>
+
+                <!-- 1080P Upscale Toggle -->
+                <div class="flex items-center justify-between mb-6 p-4 rounded-xl bg-gradient-to-r from-blue-500/10 to-indigo-500/10 border border-blue-500/20">
+                    <div class="flex-1">
+                        <h3 class="text-white font-semibold mb-1 flex items-center gap-2">
+                            <i data-lucide="expand" class="w-5 h-5 text-blue-400"></i>
+                            Escalar a 1080P Premium
+                        </h3>
+                        <p class="text-gray-300 text-sm">Mejora la resolución a Full HD con tecnología de upscale profesional</p>
+                        <p class="text-gray-400 text-xs mt-1">Procesamiento adicional • +45s al tiempo total</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer ml-4">
+                        <input type="checkbox" id="upscale1080p" class="sr-only peer">
+                        <div class="w-12 h-7 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-blue-500 peer-checked:to-indigo-500"></div>
                     </label>
                 </div>
             </div>
@@ -311,6 +327,7 @@
                         <span class="flex items-center gap-2"><i data-lucide="shield" class="w-4 h-4"></i> Proceso seguro</span>
                         <span class="flex items-center gap-2"><i data-lucide="cpu" class="w-4 h-4"></i> IA Premium</span>
                         <span id="audioIndicator" class="flex items-center gap-2 hidden"><i data-lucide="music" class="w-4 h-4 text-emerald-400"></i> +Audio</span>
+                        <span id="upscaleIndicator" class="flex items-center gap-2 hidden"><i data-lucide="expand" class="w-4 h-4 text-blue-400"></i> +1080P</span>
                     </div>
                 </div>
             </div>
@@ -403,9 +420,11 @@
         const promptTextarea = document.getElementById('prompt');
         const autoOptimizeCheckbox = document.getElementById('autoOptimize');
         const addAudioCheckbox = document.getElementById('addAudio');
+        const upscale1080pCheckbox = document.getElementById('upscale1080p');
         const generateBtn = document.getElementById('generateBtn');
         const estimatedTime = document.getElementById('estimatedTime');
         const audioIndicator = document.getElementById('audioIndicator');
+        const upscaleIndicator = document.getElementById('upscaleIndicator');
         const generateText = document.getElementById('generateText');
         const generatingText = document.getElementById('generatingText');
         const progressSection = document.getElementById('progressSection');
@@ -526,16 +545,37 @@
             });
         });
 
-        // Audio checkbox handler
-        addAudioCheckbox.addEventListener('change', () => {
-            if (addAudioCheckbox.checked) {
-                estimatedTime.textContent = '2-7 minutos';
+        // Update time estimation based on selected features
+        function updateTimeEstimation() {
+            let baseTime = 300; // 5 minutes in seconds
+            let hasAudio = addAudioCheckbox.checked;
+            let hasUpscale = upscale1080pCheckbox.checked;
+
+            if (hasAudio) baseTime += 120; // +2 minutes for audio
+            if (hasUpscale) baseTime += 90; // +1.5 minutes for upscale
+
+            let minTime = Math.floor(baseTime / 60);
+            let maxTime = Math.floor((baseTime * 1.4) / 60); // 40% variance
+
+            estimatedTime.textContent = `${minTime}-${maxTime} minutos`;
+
+            // Update indicators
+            if (hasAudio) {
                 audioIndicator.classList.remove('hidden');
             } else {
-                estimatedTime.textContent = '1-5 minutos';
                 audioIndicator.classList.add('hidden');
             }
-        });
+
+            if (hasUpscale) {
+                upscaleIndicator.classList.remove('hidden');
+            } else {
+                upscaleIndicator.classList.add('hidden');
+            }
+        }
+
+        // Checkbox handlers
+        addAudioCheckbox.addEventListener('change', updateTimeEstimation);
+        upscale1080pCheckbox.addEventListener('change', updateTimeEstimation);
 
         // Generate video
         generateBtn.addEventListener('click', async () => {
@@ -559,6 +599,7 @@
                 formData.append('model', selectedModel);
                 formData.append('auto_optimize', autoOptimizeCheckbox.checked);
                 formData.append('add_audio', addAudioCheckbox.checked);
+                formData.append('upscale_1080p', upscale1080pCheckbox.checked);
 
                 // Start generation
                 progressText.textContent = 'Iniciando generación de video...';
@@ -670,8 +711,8 @@
             promptTextarea.value = '';
             autoOptimizeCheckbox.checked = false;
             addAudioCheckbox.checked = false;
-            estimatedTime.textContent = '1-5 minutos';
-            audioIndicator.classList.add('hidden');
+            upscale1080pCheckbox.checked = false;
+            updateTimeEstimation();
             progressSection.classList.add('hidden');
             resultSection.classList.add('hidden');
             errorSection.classList.add('hidden');

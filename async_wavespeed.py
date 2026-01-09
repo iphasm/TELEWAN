@@ -275,6 +275,71 @@ class AsyncWavespeedAPI:
             print(f"❌ Audio generation error: {e}")
             return None
 
+    async def upscale_video_to_1080p(self, video_url: str) -> Optional[str]:
+        """
+        Upscale video to 1080P using WavespeedAI video upscaler pro
+        """
+        try:
+            # Video upscale API
+            upscale_url = f"{self.base_url}/api/v3/wavespeed-ai/video-upscaler-pro"
+            upscale_payload = {
+                "target_resolution": "1080p",
+                "video": video_url
+            }
+
+            print(f"⬆️ Sending upscale request for video: {video_url}")
+            async with aiohttp.ClientSession(headers=self.headers) as session:
+                async with session.post(upscale_url, json=upscale_payload) as response:
+                    response.raise_for_status()
+                    upscale_result = await response.json()
+
+                    if upscale_result.get("data") and upscale_result["data"].get("id"):
+                        upscale_request_id = upscale_result["data"]["id"]
+                        print(f"⬆️ Upscale generation started, request ID: {upscale_request_id}")
+                    else:
+                        print(f"❌ Invalid upscale API response: {upscale_result}")
+                        return None
+
+            # Poll for upscale completion
+            upscale_status_url = f"{self.base_url}/api/v3/predictions/{upscale_request_id}/result"
+            max_upscale_attempts = 120  # ~2 minutes for upscale
+
+            for attempt in range(max_upscale_attempts):
+                try:
+                    async with aiohttp.ClientSession(headers=self.headers) as session:
+                        async with session.get(upscale_status_url) as response:
+                            if response.status == 200:
+                                status_result = await response.json()
+
+                                if status_result.get("data"):
+                                    upscale_data = status_result["data"]
+                                    status = upscale_data.get("status")
+
+                                    if status == "completed":
+                                        if upscale_data.get("outputs") and len(upscale_data["outputs"]) > 0:
+                                            upscaled_video_url = upscale_data["outputs"][0]
+                                            print(f"⬆️ Upscale completed: {upscaled_video_url}")
+                                            return upscaled_video_url
+
+                                    elif status == "failed":
+                                        error_msg = upscale_data.get("error", "Upscale failed")
+                                        print(f"❌ Upscale failed: {error_msg}")
+                                        return None
+
+                    print(f"⏫ Upscaling... ({attempt + 1}/{max_upscale_attempts})")
+                    await asyncio.sleep(1)
+
+                except Exception as e:
+                    print(f"⚠️  Upscale polling error: {e}")
+                    await asyncio.sleep(1)
+
+            print("⏰ Upscale timeout")
+            return None
+
+        except Exception as e:
+            print(f"❌ Upscale error: {e}")
+            return None
+
     def get_available_models(self) -> Dict[str, Dict[str, Any]]:
         """
         Retorna información sobre los modelos disponibles

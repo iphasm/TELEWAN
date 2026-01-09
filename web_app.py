@@ -72,7 +72,8 @@ async def generate_video(
     prompt: str = Form(...),
     model: str = Form("ultra_fast"),
     auto_optimize: bool = Form(False),
-    add_audio: bool = Form(False)
+    add_audio: bool = Form(False),
+    upscale_1080p: bool = Form(False)
 ):
     """
     Start video generation process
@@ -99,11 +100,13 @@ async def generate_video(
             "model": model,
             "auto_optimize": auto_optimize,
             "add_audio": add_audio,
+            "upscale_1080p": upscale_1080p,
             "original_prompt": prompt,
             "optimized_prompt": None,
             "image_url": None,
             "video_url": None,
             "audio_video_url": None,
+            "upscaled_video_url": None,
             "error": None
         }
 
@@ -128,7 +131,8 @@ async def generate_video(
             image_url,
             model,
             auto_optimize,
-            add_audio
+            add_audio,
+            upscale_1080p
         )
 
         return {
@@ -179,7 +183,8 @@ async def process_video_generation(
     image_url: Optional[str],
     model: str,
     auto_optimize: bool,
-    add_audio: bool
+    add_audio: bool,
+    upscale_1080p: bool
 ):
     """
     Background task to process video generation
@@ -322,30 +327,59 @@ async def process_video_generation(
                             print(f"✅ Video generated successfully: {video_filename}")
 
                             # If audio is requested, add audio to the video
-                            if add_audio:
-                                print("🎵 Starting audio generation...")
-                                task["message"] = "Generando audio ambiental..."
+                            final_video_url = task['video_url']
+                            final_video_path = video_path
 
-                                # Create a URL for the generated video so audio API can access it
+                            if add_audio or upscale_1080p:
+                                # Create a URL for the generated video so APIs can access it
                                 video_file_url = f"{os.getenv('BASE_URL', 'http://localhost:8000')}{task['video_url']}"
 
-                                try:
-                                    audio_video_url = await api_client.add_audio_to_video(video_file_url)
-                                    if audio_video_url:
-                                        # Download the video with audio and replace the original
-                                        audio_video_content = await api_client.download_video(audio_video_url)
+                                if add_audio:
+                                    print("🎵 Starting audio generation...")
+                                    task["message"] = "Generando audio ambiental..."
 
-                                        # Save the video with audio, replacing the original
-                                        async with aiofiles.open(video_path, "wb") as f:
-                                            await f.write(audio_video_content)
+                                    try:
+                                        audio_video_url = await api_client.add_audio_to_video(video_file_url)
+                                        if audio_video_url:
+                                            # Download the video with audio and replace the original
+                                            audio_video_content = await api_client.download_video(audio_video_url)
 
-                                        task["audio_video_url"] = task["video_url"]  # Same URL, new content
-                                        task["message"] = "¡Video con audio completado!"
-                                        print(f"✅ Audio added successfully, video updated")
-                                    else:
-                                        print("⚠️  Audio generation failed, keeping original video")
-                                except Exception as e:
-                                    print(f"⚠️  Audio generation error: {e}, keeping original video")
+                                            # Save the video with audio, replacing the original
+                                            async with aiofiles.open(video_path, "wb") as f:
+                                                await f.write(audio_video_content)
+
+                                            task["audio_video_url"] = task["video_url"]  # Same URL, new content
+                                            task["message"] = "¡Video con audio listo!"
+                                            print(f"✅ Audio added successfully, video updated")
+
+                                            # Update the URL for potential upscale
+                                            video_file_url = f"{os.getenv('BASE_URL', 'http://localhost:8000')}{task['video_url']}"
+                                        else:
+                                            print("⚠️  Audio generation failed, keeping original video")
+                                    except Exception as e:
+                                        print(f"⚠️  Audio generation error: {e}, keeping original video")
+
+                                if upscale_1080p:
+                                    print("⬆️ Starting 1080P upscale...")
+                                    task["message"] = "Escalando a 1080P premium..."
+
+                                    try:
+                                        upscaled_video_url = await api_client.upscale_video_to_1080p(video_file_url)
+                                        if upscaled_video_url:
+                                            # Download the upscaled video and replace the original
+                                            upscaled_video_content = await api_client.download_video(upscaled_video_url)
+
+                                            # Save the upscaled video, replacing the original
+                                            async with aiofiles.open(video_path, "wb") as f:
+                                                await f.write(upscaled_video_content)
+
+                                            task["upscaled_video_url"] = task["video_url"]  # Same URL, new content
+                                            task["message"] = "¡Video 1080P premium completado!"
+                                            print(f"✅ Video upscaled to 1080P successfully")
+                                        else:
+                                            print("⚠️  1080P upscale failed, keeping original video")
+                                    except Exception as e:
+                                        print(f"⚠️  1080P upscale error: {e}, keeping original video")
 
                             return
 

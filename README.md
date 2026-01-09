@@ -118,7 +118,7 @@ SynthClip incluye una función premium para añadir **audio ambiental y efectos 
 **🎯 Características:**
 - **Efectos de sonido automáticos** basados en el contenido del video
 - **Audio ambiental inteligente** que se adapta a la escena
-- **Procesamiento adicional** +30 segundos al tiempo total
+- **Procesamiento adicional** +2 minutos al tiempo total
 - **Tecnología Hunyuan** de WavespeedAI
 
 **🎵 Cómo usar:**
@@ -131,6 +131,28 @@ SynthClip incluye una función premium para añadir **audio ambiental y efectos 
 - Disponible para todos los modelos de video
 - Procesamiento completamente automático
 - Calidad de audio profesional
+
+### ⬆️ **Escalado a 1080P Premium (VIP)**
+
+SynthClip ofrece **escalado profesional a Full HD** usando tecnología de IA avanzada para mejorar la resolución de tus videos.
+
+**🎯 Características:**
+- **Upscale inteligente** de 480p/720p a 1080p
+- **Tecnología Video Upscaler Pro** de WavespeedAI
+- **Mejora de calidad** sin pérdida de detalle
+- **Procesamiento adicional** +1.5 minutos al tiempo total
+
+**⬆️ Cómo usar:**
+- Marca la casilla "Escalar a 1080P Premium" antes de generar
+- El sistema procesará tu video con algoritmos de upscale avanzados
+- Obtendrás un video en resolución Full HD (1920x1080)
+- Compatible con audio y optimización de prompts
+
+**💎 Información VIP:**
+- **Mejor resolución** para redes sociales y YouTube
+- **Calidad profesional** para contenido premium
+- **Procesamiento automático** sin configuración manual
+- **Resultado final** en formato MP4 1080p
 
 ### 🤖 Versión Bot de Telegram (Legacy)
 
