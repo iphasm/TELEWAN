@@ -114,7 +114,7 @@ async def generate_video(
 
             # Create a full URL that can be accessed by Wavespeed API
             # Get the base URL from environment or request
-            base_url = os.getenv('BASE_URL', 'http://localhost:8000')
+            base_url = os.getenv('BASE_URL', 'http://localhost:8000').rstrip('/')
             image_url = f"{base_url}/images/{image_path.name}"
 
         # Start background processing
@@ -237,7 +237,15 @@ async def process_video_generation(
             task["message"] = "Video generation in progress..."
 
             # Step 3: Poll for completion
-            request_id = video_result.get("id") or video_result.get("request_id")
+            # Handle nested response structure from Wavespeed API
+            request_id = None
+            if video_result.get("data") and video_result["data"].get("id"):
+                request_id = video_result["data"]["id"]
+            elif video_result.get("id"):
+                request_id = video_result["id"]
+            elif video_result.get("request_id"):
+                request_id = video_result["request_id"]
+
             if not request_id:
                 print(f"❌ No request ID in response: {video_result}")
                 raise Exception("No request ID received from API")
