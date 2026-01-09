@@ -111,6 +111,27 @@ SynthClip es una aplicación web que transforma fotografías en videos usando IA
 - Activa la optimización automática para descripciones mejoradas
 - Para Text-to-Video no necesitas subir imagen
 
+### 🎵 **Audio Foley Automático (Premium)**
+
+SynthClip incluye una función premium para añadir **audio ambiental y efectos de sonido** generados por IA a tus videos.
+
+**🎯 Características:**
+- **Efectos de sonido automáticos** basados en el contenido del video
+- **Audio ambiental inteligente** que se adapta a la escena
+- **Procesamiento adicional** +30 segundos al tiempo total
+- **Tecnología Hunyuan** de WavespeedAI
+
+**🎵 Cómo usar:**
+- Marca la casilla "Audio Foley Automático" antes de generar
+- El sistema analizará tu video y añadirá sonidos apropiados
+- El tiempo de procesamiento se extenderá automáticamente
+- Obtendrás un video con audio inmersivo
+
+**💰 Información adicional:**
+- Disponible para todos los modelos de video
+- Procesamiento completamente automático
+- Calidad de audio profesional
+
 ### 🤖 Versión Bot de Telegram (Legacy)
 
 Para usar como bot de Telegram, configura adicionalmente:

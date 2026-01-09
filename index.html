@@ -241,7 +241,7 @@
                 </div>
 
                 <!-- Auto Optimize Toggle -->
-                <div class="flex items-center justify-between mb-6 p-4 rounded-xl bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20">
+                <div class="flex items-center justify-between mb-4 p-4 rounded-xl bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20">
                     <div class="flex-1">
                         <h3 class="text-white font-semibold mb-1 flex items-center gap-2">
                             <i data-lucide="brain" class="w-5 h-5 text-purple-400"></i>
@@ -252,6 +252,22 @@
                     <label class="relative inline-flex items-center cursor-pointer ml-4">
                         <input type="checkbox" id="autoOptimize" class="sr-only peer">
                         <div class="w-12 h-7 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-500/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-purple-500 peer-checked:to-blue-500"></div>
+                    </label>
+                </div>
+
+                <!-- Audio Generation Toggle -->
+                <div class="flex items-center justify-between mb-6 p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
+                    <div class="flex-1">
+                        <h3 class="text-white font-semibold mb-1 flex items-center gap-2">
+                            <i data-lucide="music" class="w-5 h-5 text-emerald-400"></i>
+                            Audio Foley Automático
+                        </h3>
+                        <p class="text-gray-300 text-sm">Añade efectos de sonido y audio ambiental generado por IA</p>
+                        <p class="text-gray-400 text-xs mt-1">Procesamiento adicional • +30s al tiempo total</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer ml-4">
+                        <input type="checkbox" id="addAudio" class="sr-only peer">
+                        <div class="w-12 h-7 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-500/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-emerald-500 peer-checked:to-teal-500"></div>
                     </label>
                 </div>
             </div>
@@ -290,10 +306,11 @@
                             <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse"></div>
                         </div>
                     </div>
-                    <div class="flex justify-center items-center gap-6 text-sm text-gray-400">
-                        <span class="flex items-center gap-2"><i data-lucide="clock" class="w-4 h-4"></i> 1-5 minutos</span>
+                    <div class="flex flex-wrap justify-center items-center gap-4 text-sm text-gray-400">
+                        <span class="flex items-center gap-2"><i data-lucide="clock" class="w-4 h-4"></i> <span id="estimatedTime">1-5 minutos</span></span>
                         <span class="flex items-center gap-2"><i data-lucide="shield" class="w-4 h-4"></i> Proceso seguro</span>
                         <span class="flex items-center gap-2"><i data-lucide="cpu" class="w-4 h-4"></i> IA Premium</span>
+                        <span id="audioIndicator" class="flex items-center gap-2 hidden"><i data-lucide="music" class="w-4 h-4 text-emerald-400"></i> +Audio</span>
                     </div>
                 </div>
             </div>
@@ -385,7 +402,10 @@
         const removeImage = document.getElementById('removeImage');
         const promptTextarea = document.getElementById('prompt');
         const autoOptimizeCheckbox = document.getElementById('autoOptimize');
+        const addAudioCheckbox = document.getElementById('addAudio');
         const generateBtn = document.getElementById('generateBtn');
+        const estimatedTime = document.getElementById('estimatedTime');
+        const audioIndicator = document.getElementById('audioIndicator');
         const generateText = document.getElementById('generateText');
         const generatingText = document.getElementById('generatingText');
         const progressSection = document.getElementById('progressSection');
@@ -506,6 +526,17 @@
             });
         });
 
+        // Audio checkbox handler
+        addAudioCheckbox.addEventListener('change', () => {
+            if (addAudioCheckbox.checked) {
+                estimatedTime.textContent = '2-7 minutos';
+                audioIndicator.classList.remove('hidden');
+            } else {
+                estimatedTime.textContent = '1-5 minutos';
+                audioIndicator.classList.add('hidden');
+            }
+        });
+
         // Generate video
         generateBtn.addEventListener('click', async () => {
             if (generateBtn.disabled) return;
@@ -527,6 +558,7 @@
                 formData.append('prompt', promptTextarea.value.trim());
                 formData.append('model', selectedModel);
                 formData.append('auto_optimize', autoOptimizeCheckbox.checked);
+                formData.append('add_audio', addAudioCheckbox.checked);
 
                 // Start generation
                 progressText.textContent = 'Iniciando generación de video...';
@@ -637,6 +669,9 @@
             uploadContent.classList.remove('hidden');
             promptTextarea.value = '';
             autoOptimizeCheckbox.checked = false;
+            addAudioCheckbox.checked = false;
+            estimatedTime.textContent = '1-5 minutos';
+            audioIndicator.classList.add('hidden');
             progressSection.classList.add('hidden');
             resultSection.classList.add('hidden');
             errorSection.classList.add('hidden');

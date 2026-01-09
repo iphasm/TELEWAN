@@ -209,6 +209,72 @@ class AsyncWavespeedAPI:
 
         return base_message
 
+    async def add_audio_to_video(self, video_url: str) -> Optional[str]:
+        """
+        Add audio/foley to a video using WavespeedAI audio API
+        """
+        try:
+            # Audio generation API
+            audio_url = f"{self.base_url}/api/v3/wavespeed-ai/hunyuan-video-foley"
+            audio_payload = {
+                "seed": -1,  # Random seed
+                "video": video_url,
+                "prompt": ""  # Empty prompt for automatic audio
+            }
+
+            print(f"🎵 Sending audio request for video: {video_url}")
+            async with aiohttp.ClientSession(headers=self.headers) as session:
+                async with session.post(audio_url, json=audio_payload) as response:
+                    response.raise_for_status()
+                    audio_result = await response.json()
+
+                    if audio_result.get("data") and audio_result["data"].get("id"):
+                        audio_request_id = audio_result["data"]["id"]
+                        print(f"🎵 Audio generation started, request ID: {audio_request_id}")
+                    else:
+                        print(f"❌ Invalid audio API response: {audio_result}")
+                        return None
+
+            # Poll for audio completion
+            audio_status_url = f"{self.base_url}/api/v3/predictions/{audio_request_id}/result"
+            max_audio_attempts = 120  # ~2 minutes for audio
+
+            for attempt in range(max_audio_attempts):
+                try:
+                    async with aiohttp.ClientSession(headers=self.headers) as session:
+                        async with session.get(audio_status_url) as response:
+                            if response.status == 200:
+                                status_result = await response.json()
+
+                                if status_result.get("data"):
+                                    audio_data = status_result["data"]
+                                    status = audio_data.get("status")
+
+                                    if status == "completed":
+                                        if audio_data.get("outputs") and len(audio_data["outputs"]) > 0:
+                                            audio_video_url = audio_data["outputs"][0]
+                                            print(f"🎵 Audio generation completed: {audio_video_url}")
+                                            return audio_video_url
+
+                                    elif status == "failed":
+                                        error_msg = audio_data.get("error", "Audio generation failed")
+                                        print(f"❌ Audio generation failed: {error_msg}")
+                                        return None
+
+                    print(f"⏳ Audio processing... ({attempt + 1}/{max_audio_attempts})")
+                    await asyncio.sleep(1)
+
+                except Exception as e:
+                    print(f"⚠️  Audio polling error: {e}")
+                    await asyncio.sleep(1)
+
+            print("⏰ Audio generation timeout")
+            return None
+
+        except Exception as e:
+            print(f"❌ Audio generation error: {e}")
+            return None
+
     def get_available_models(self) -> Dict[str, Dict[str, Any]]:
         """
         Retorna información sobre los modelos disponibles

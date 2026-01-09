@@ -71,7 +71,8 @@ async def generate_video(
     image: Optional[UploadFile] = File(None),
     prompt: str = Form(...),
     model: str = Form("ultra_fast"),
-    auto_optimize: bool = Form(False)
+    auto_optimize: bool = Form(False),
+    add_audio: bool = Form(False)
 ):
     """
     Start video generation process
@@ -97,10 +98,12 @@ async def generate_video(
             "created_at": datetime.now(),
             "model": model,
             "auto_optimize": auto_optimize,
+            "add_audio": add_audio,
             "original_prompt": prompt,
             "optimized_prompt": None,
             "image_url": None,
             "video_url": None,
+            "audio_video_url": None,
             "error": None
         }
 
@@ -124,7 +127,8 @@ async def generate_video(
             prompt,
             image_url,
             model,
-            auto_optimize
+            auto_optimize,
+            add_audio
         )
 
         return {
@@ -174,7 +178,8 @@ async def process_video_generation(
     prompt: str,
     image_url: Optional[str],
     model: str,
-    auto_optimize: bool
+    auto_optimize: bool,
+    add_audio: bool
 ):
     """
     Background task to process video generation
@@ -315,6 +320,33 @@ async def process_video_generation(
                             task["video_url"] = f"/videos/{video_filename}"
 
                             print(f"✅ Video generated successfully: {video_filename}")
+
+                            # If audio is requested, add audio to the video
+                            if add_audio:
+                                print("🎵 Starting audio generation...")
+                                task["message"] = "Generando audio ambiental..."
+
+                                # Create a URL for the generated video so audio API can access it
+                                video_file_url = f"{os.getenv('BASE_URL', 'http://localhost:8000')}{task['video_url']}"
+
+                                try:
+                                    audio_video_url = await api_client.add_audio_to_video(video_file_url)
+                                    if audio_video_url:
+                                        # Download the video with audio and replace the original
+                                        audio_video_content = await api_client.download_video(audio_video_url)
+
+                                        # Save the video with audio, replacing the original
+                                        async with aiofiles.open(video_path, "wb") as f:
+                                            await f.write(audio_video_content)
+
+                                        task["audio_video_url"] = task["video_url"]  # Same URL, new content
+                                        task["message"] = "¡Video con audio completado!"
+                                        print(f"✅ Audio added successfully, video updated")
+                                    else:
+                                        print("⚠️  Audio generation failed, keeping original video")
+                                except Exception as e:
+                                    print(f"⚠️  Audio generation error: {e}, keeping original video")
+
                             return
 
                     elif status == "failed":
