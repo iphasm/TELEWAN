@@ -209,7 +209,7 @@ class AsyncWavespeedAPI:
 
         return base_message
 
-    async def add_audio_to_video(self, video_url: str) -> Optional[str]:
+    async def add_audio_to_video(self, video_url: str, prompt: str = "") -> Optional[str]:
         """
         Add audio/foley to a video using WavespeedAI audio API
         """
@@ -219,7 +219,7 @@ class AsyncWavespeedAPI:
             audio_payload = {
                 "seed": -1,  # Random seed
                 "video": video_url,
-                "prompt": ""  # Empty prompt for automatic audio
+                "prompt": prompt  # Use the video prompt for better audio generation
             }
 
             print(f"🎵 Sending audio request for video: {video_url}")
