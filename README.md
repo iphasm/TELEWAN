@@ -50,6 +50,7 @@ SynthClip es una aplicación web que transforma fotografías en videos usando IA
    ```bash
    railway variables set WAVESPEED_API_KEY=tu_api_key_aqui
    railway variables set VOLUME_PATH=/app/storage
+   railway variables set BASE_URL=https://tu-proyecto.railway.app
    ```
 
 4. **Despliega:**
@@ -77,6 +78,7 @@ SynthClip es una aplicación web que transforma fotografías en videos usando IA
    # Variables opcionales para la interfaz web
    VOLUME_PATH=./storage
    PORT=8000
+   BASE_URL=http://localhost:8000
    ```
 
 4. **Ejecuta la aplicación web:**

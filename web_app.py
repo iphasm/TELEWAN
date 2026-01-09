@@ -6,6 +6,7 @@ import os
 import uuid
 import asyncio
 import aiofiles
+import base64
 from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
@@ -103,14 +104,18 @@ async def generate_video(
             "error": None
         }
 
-        # Save uploaded image if provided
+        # Save uploaded image if provided and create accessible URL
         image_url = None
         if image:
             image_path = storage_dir / f"input_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.jpg"
             async with aiofiles.open(image_path, "wb") as f:
                 content = await image.read()
                 await f.write(content)
-            image_url = str(image_path)
+
+            # Create a full URL that can be accessed by Wavespeed API
+            # Get the base URL from environment or request
+            base_url = os.getenv('BASE_URL', 'http://localhost:8000')
+            image_url = f"{base_url}/images/{image_path.name}"
 
         # Start background processing
         background_tasks.add_task(
@@ -294,6 +299,20 @@ async def get_video(filename: str):
     return FileResponse(
         path=video_path,
         media_type="video/mp4",
+        filename=filename
+    )
+
+# Serve uploaded images (temporary workaround for Wavespeed API)
+@app.get("/images/{filename}")
+async def get_image(filename: str):
+    """Serve uploaded images temporarily"""
+    image_path = storage_dir / filename
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    return FileResponse(
+        path=image_path,
+        media_type="image/jpeg",
         filename=filename
     )
 
