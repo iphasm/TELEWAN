@@ -232,14 +232,30 @@ async def process_video_generation(
             if not request_id:
                 raise Exception("No request ID received from API")
 
+            print(f"🔄 Starting polling for request_id: {request_id}")
+            print(f"📊 Initial video result: {video_result}")
+
             # Poll for status
-            max_attempts = 240  # ~4 minutes
+            max_attempts = 120  # ~2 minutes (reduced for faster debugging)
             for attempt in range(max_attempts):
                 try:
+                    print(f"🔍 Checking status (attempt {attempt + 1}/{max_attempts})")
                     status_result = await api_client.get_video_status(request_id)
+                    print(f"📋 Status result: {status_result}")
 
-                    if status_result.get("status") == "completed":
-                        video_url = status_result.get("video_url")
+                    if not status_result:
+                        print(f"⚠️  Empty status result, retrying...")
+                        await asyncio.sleep(1)
+                        continue
+
+                    status = status_result.get("status")
+                    if status == "completed":
+                        # Check for video in different possible fields
+                        video_url = (status_result.get("video_url") or
+                                   status_result.get("video") or
+                                   status_result.get("output") or
+                                   status_result.get("result"))
+                        print(f"🎬 Video URL found: {video_url}")
                         if video_url:
                             # Download and save video
                             task["progress"] = 80
@@ -262,21 +278,32 @@ async def process_video_generation(
                             print(f"✅ Video generated successfully: {video_filename}")
                             return
 
-                    elif status_result.get("status") == "failed":
-                        raise Exception("Video generation failed on API side")
+                    elif status == "failed":
+                        error_msg = status_result.get("error", "Video generation failed on API side")
+                        print(f"❌ Video generation failed: {error_msg}")
+                        raise Exception(f"Video generation failed: {error_msg}")
+
+                    elif status == "processing":
+                        print(f"⚙️  Still processing...")
+
+                    else:
+                        print(f"🤔 Unknown status: {status}")
 
                     # Update progress
                     progress = 50 + (attempt / max_attempts) * 30
                     task["progress"] = min(progress, 90)
                     task["message"] = f"Generating video... ({attempt + 1}/{max_attempts})"
 
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(1)  # Check every 1 second
 
                 except Exception as e:
-                    print(f"Status check failed: {e}")
+                    print(f"❌ Status check failed (attempt {attempt + 1}): {e}")
+                    # Continue polling even if one check fails
                     await asyncio.sleep(1)
 
-            raise Exception("Video generation timeout")
+            # If we get here, polling timed out
+            print(f"⏰ Polling timeout after {max_attempts} attempts")
+            raise Exception(f"Video generation timeout after {max_attempts} attempts")
 
         except Exception as e:
             raise Exception(f"Video generation failed: {str(e)}")
