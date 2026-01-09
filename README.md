@@ -50,7 +50,7 @@ SynthClip es una aplicación web que transforma fotografías en videos usando IA
    ```bash
    railway variables set WAVESPEED_API_KEY=tu_api_key_aqui
    railway variables set VOLUME_PATH=/app/storage
-   railway variables set BASE_URL=https://tu-proyecto.railway.app
+   railway variables set BASE_URL=https://telewan-production.up.railway.app
    ```
 
 4. **Despliega:**
