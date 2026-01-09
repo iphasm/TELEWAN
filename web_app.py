@@ -335,10 +335,10 @@ async def process_video_generation(
                             final_video_path = video_path
 
                             # Stage 1: Audio processing (if requested)
-                                if add_audio:
-                                    print("🎵 Starting audio generation...")
-                                    task["progress"] = 80
-                                    task["message"] = "Generando audio ambiental..."
+                            if add_audio:
+                                print("🎵 Starting audio generation...")
+                                task["progress"] = 80
+                                task["message"] = "Generando audio ambiental..."
 
                                 # Create a URL for the generated video so audio API can access it
                                 video_file_url = f"{os.getenv('BASE_URL', 'http://localhost:8000')}{task['video_url']}"
@@ -363,10 +363,10 @@ async def process_video_generation(
                                     print(f"⚠️  Audio generation error: {e}, keeping original video")
 
                             # Stage 2: 1080P upscale (if requested)
-                                if upscale_1080p:
-                                    print("⬆️ Starting 1080P upscale...")
-                                    task["progress"] = 95
-                                    task["message"] = "Escalando a 1080P premium..."
+                            if upscale_1080p:
+                                print("⬆️ Starting 1080P upscale...")
+                                task["progress"] = 95
+                                task["message"] = "Escalando a 1080P premium..."
 
                                 # Create a URL for the current video (with or without audio)
                                 video_file_url = f"{os.getenv('BASE_URL', 'http://localhost:8000')}{task['video_url']}"
