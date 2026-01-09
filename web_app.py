@@ -233,15 +233,12 @@ async def process_video_generation(
                 raise Exception("No request ID received from API")
 
             print(f"🔄 Starting polling for request_id: {request_id}")
-            print(f"📊 Initial video result: {video_result}")
 
             # Poll for status
-            max_attempts = 120  # ~2 minutes (reduced for faster debugging)
+            max_attempts = 240  # ~4 minutes (back to original)
             for attempt in range(max_attempts):
                 try:
-                    print(f"🔍 Checking status (attempt {attempt + 1}/{max_attempts})")
                     status_result = await api_client.get_video_status(request_id)
-                    print(f"📋 Status result: {status_result}")
 
                     if not status_result:
                         print(f"⚠️  Empty status result, retrying...")
@@ -252,10 +249,8 @@ async def process_video_generation(
                     if status_result.get('data'):
                         task_data = status_result['data']
                         status = task_data.get('status')
-                        print(f"📊 Nested status found: {status}")
                     else:
                         status = status_result.get("status")
-                        print(f"📊 Direct status found: {status}")
 
                     if status == "completed":
                         # Check for video URL in nested structure (like original bot)
@@ -263,14 +258,14 @@ async def process_video_generation(
                             task_data = status_result['data']
                             if len(task_data['outputs']) > 0:
                                 video_url = task_data['outputs'][0]
-                                print(f"🎬 Video URL found in nested outputs: {video_url}")
                         else:
                             # Fallback to direct fields
                             video_url = (status_result.get("video_url") or
                                        status_result.get("video") or
                                        status_result.get("output") or
                                        status_result.get("result"))
-                            print(f"🎬 Video URL found in direct fields: {video_url}")
+
+                        print(f"🎬 Video URL found: {video_url[:50]}...")
 
                         if video_url:
                             # Download and save video
@@ -304,7 +299,7 @@ async def process_video_generation(
                         raise Exception(f"Video generation failed: {error_msg}")
 
                     elif status == "processing":
-                        print(f"⚙️  Still processing...")
+                        pass  # Still processing, continue polling
 
                     else:
                         print(f"🤔 Unknown status: {status}")
@@ -317,7 +312,7 @@ async def process_video_generation(
                     await asyncio.sleep(1)  # Check every 1 second
 
                 except Exception as e:
-                    print(f"❌ Status check failed (attempt {attempt + 1}): {e}")
+                    print(f"⚠️  Status check failed (attempt {attempt + 1}): {e}")
                     # Continue polling even if one check fails
                     await asyncio.sleep(1)
 
