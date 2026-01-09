@@ -218,11 +218,20 @@ async def process_video_generation(
 
         # Step 2: Generate video
         try:
+            print(f"🎬 Starting video generation with model: {model}")
+            print(f"📝 Prompt: {final_prompt[:100]}...")
+            print(f"🖼️  Image URL: {image_url}")
+
             video_result = await api_client.generate_video(
                 prompt=final_prompt,
                 image_url=image_url,
                 model=model
             )
+
+            print(f"✅ Video generation API response: {video_result}")
+
+            if not video_result:
+                raise Exception("Empty response from video generation API")
 
             task["progress"] = 50
             task["message"] = "Video generation in progress..."
@@ -230,15 +239,19 @@ async def process_video_generation(
             # Step 3: Poll for completion
             request_id = video_result.get("id") or video_result.get("request_id")
             if not request_id:
+                print(f"❌ No request ID in response: {video_result}")
                 raise Exception("No request ID received from API")
 
             print(f"🔄 Starting polling for request_id: {request_id}")
+            print(f"📊 Full initial response: {video_result}")
 
             # Poll for status
             max_attempts = 240  # ~4 minutes (back to original)
             for attempt in range(max_attempts):
                 try:
+                    print(f"🔍 Checking status (attempt {attempt + 1}/{max_attempts}) for request_id: {request_id}")
                     status_result = await api_client.get_video_status(request_id)
+                    print(f"📋 Raw status result: {status_result}")
 
                     if not status_result:
                         print(f"⚠️  Empty status result, retrying...")
@@ -249,8 +262,15 @@ async def process_video_generation(
                     if status_result.get('data'):
                         task_data = status_result['data']
                         status = task_data.get('status')
+                        print(f"📊 Using nested status: {status}")
                     else:
                         status = status_result.get("status")
+                        print(f"📊 Using direct status: {status}")
+
+                    if status is None:
+                        print(f"⚠️  Status is None, response: {status_result}")
+                        await asyncio.sleep(1)
+                        continue
 
                     if status == "completed":
                         # Check for video URL in nested structure (like original bot)
@@ -312,15 +332,18 @@ async def process_video_generation(
                     await asyncio.sleep(1)  # Check every 1 second
 
                 except Exception as e:
-                    print(f"⚠️  Status check failed (attempt {attempt + 1}): {e}")
-                    # Continue polling even if one check fails
-                    await asyncio.sleep(1)
+                    print(f"❌ Status check failed (attempt {attempt + 1}): {type(e).__name__}: {e}")
+                    if attempt < max_attempts - 1:  # Don't sleep on last attempt
+                        await asyncio.sleep(2)  # Wait longer on error
+                    else:
+                        raise Exception(f"Status polling failed after {max_attempts} attempts: {e}")
 
             # If we get here, polling timed out
             print(f"⏰ Polling timeout after {max_attempts} attempts")
             raise Exception(f"Video generation timeout after {max_attempts} attempts")
 
         except Exception as e:
+            print(f"❌ Video generation failed: {type(e).__name__}: {e}")
             raise Exception(f"Video generation failed: {str(e)}")
 
     except Exception as e:
