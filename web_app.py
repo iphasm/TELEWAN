@@ -477,32 +477,29 @@ async def process_video_generation(
 
                     print(f"📋 Text-only optimization result: {optimize_result}")
 
-                    # For text-only, the result should be direct
+                    # The method now returns a standardized response
+                    optimization_successful = False
                     if "optimized_prompt" in optimize_result:
                         optimized = optimize_result["optimized_prompt"]
                         print(f"📝 Found optimized_prompt: '{optimized[:50]}...'")
-                        print(f"📏 Length comparison: {len(optimized.strip())} > {len(final_prompt)} = {len(optimized.strip()) > len(final_prompt)}")
-                        if optimized and len(optimized.strip()) > len(final_prompt):
+                        # Accept any optimized prompt, not just longer ones
+                        if optimized and optimized.strip() and optimized != final_prompt:
                             old_prompt = final_prompt
                             final_prompt = optimized
                             task["optimized_prompt"] = final_prompt
+                            optimization_successful = True
                             print(f"✅ Text-only prompt optimized: '{old_prompt[:30]}...' → '{final_prompt[:30]}...'")
-                    elif "result" in optimize_result:
-                        # Some APIs return result directly
-                        optimized = optimize_result["result"]
-                        print(f"📝 Found result: '{optimized[:50]}...'")
-                        print(f"📏 Length comparison: {len(optimized.strip())} > {len(final_prompt)} = {len(optimized.strip()) > len(final_prompt)}")
-                        if optimized and len(optimized.strip()) > len(final_prompt):
-                            old_prompt = final_prompt
-                            final_prompt = optimized
-                            task["optimized_prompt"] = final_prompt
-                            print(f"✅ Text-only prompt optimized (result): '{old_prompt[:30]}...' → '{final_prompt[:30]}...'")
+                        else:
+                            print(f"📝 Optimized prompt is same as original or empty, keeping current prompt")
                     else:
-                        print(f"⚠️  No optimized_prompt or result found in response: {list(optimize_result.keys())}")
+                        print(f"⚠️  No optimized_prompt found in response: {list(optimize_result.keys())}")
+
+                    if not optimization_successful:
+                        print(f"📝 Continuing with current prompt: '{final_prompt[:50]}...'")
 
                 except Exception as e:
                     print(f"⚠️  Text-only prompt optimization failed: {e}")
-                    # Continue with original prompt
+                    print(f"📝 Continuing with current prompt: '{final_prompt[:50]}...'")
 
             elif image_url:
                 task["progress"] = 20
@@ -518,8 +515,9 @@ async def process_video_generation(
 
                     # Poll for optimization result with timeout
                     task_id = optimize_result["id"]
-                    max_attempts = 5  # Reducir de 10 a 5 intentos
+                    max_attempts = 15  # Aumentar a 15 intentos (7.5 segundos total)
                     attempt = 0
+                    optimization_successful = False
 
                     while attempt < max_attempts:
                         try:
@@ -530,20 +528,33 @@ async def process_video_generation(
                                 if "optimized_prompt" in opt_status:
                                     optimized = opt_status["optimized_prompt"]
                                     print(f"📝 Found optimized_prompt: '{optimized[:50]}...'")
-                                    print(f"📏 Length comparison: {len(optimized.strip())} > {len(final_prompt)} = {len(optimized.strip()) > len(final_prompt)}")
-                                    if optimized and len(optimized.strip()) > len(final_prompt):
+                                    # Accept any optimized prompt, not just longer ones
+                                    if optimized and optimized.strip():
                                         old_prompt = final_prompt
                                         final_prompt = optimized
                                         task["optimized_prompt"] = final_prompt
+                                        optimization_successful = True
                                         print(f"✅ Image-based prompt optimized: '{old_prompt[:30]}...' → '{final_prompt[:30]}...'")
+                                        break
+                                elif "result" in opt_status and opt_status["result"]:
+                                    # Some APIs return result directly
+                                    optimized = opt_status["result"]
+                                    print(f"📝 Found result: '{optimized[:50]}...'")
+                                    if optimized and optimized.strip():
+                                        old_prompt = final_prompt
+                                        final_prompt = optimized
+                                        task["optimized_prompt"] = final_prompt
+                                        optimization_successful = True
+                                        print(f"✅ Image-based prompt optimized (result): '{old_prompt[:30]}...' → '{final_prompt[:30]}...'")
+                                        break
                                 else:
-                                    print(f"⚠️  No optimized_prompt found in completed response: {list(opt_status.keys())}")
+                                    print(f"⚠️  No optimized_prompt or result found in completed response: {list(opt_status.keys())}")
                                 break
                             elif opt_status.get("status") == "failed":
                                 print(f"⚠️  Prompt optimization failed on server side")
                                 break
 
-                            # Wait before next attempt (reducir tiempo)
+                            # Wait before next attempt
                             await asyncio.sleep(0.5)
                             attempt += 1
 
@@ -551,8 +562,10 @@ async def process_video_generation(
                             print(f"⚠️  Error polling prompt optimization: {poll_error}")
                             break
 
-                    if attempt >= max_attempts:
-                        print(f"⚠️  Prompt optimization timed out after {max_attempts} attempts, continuing with original prompt")
+                    if not optimization_successful:
+                        if attempt >= max_attempts:
+                            print(f"⚠️  Prompt optimization timed out after {max_attempts} attempts, continuing with current prompt")
+                        print(f"📝 Continuing with prompt: '{final_prompt[:50]}...'")
 
                 except Exception as e:
                     print(f"⚠️  Image-based prompt optimization failed: {e}")

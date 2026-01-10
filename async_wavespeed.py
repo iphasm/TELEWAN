@@ -225,12 +225,13 @@ class AsyncWavespeedAPI:
     async def optimize_prompt_text_only(self, text: str, mode: str = "video", style: str = "default") -> Dict[str, Any]:
         """
         Optimiza un prompt de texto solo (sin imagen) usando WaveSpeedAI
+        Ahora usa modo asíncrono para consistencia y mejor manejo de timeouts
         """
         try:
             endpoint = f"{self.base_url}/api/v3/wavespeed-ai/prompt-optimizer"
 
             payload = {
-                "enable_sync_mode": True,  # Modo síncrono para texto solo
+                "enable_sync_mode": False,  # Cambiar a modo asíncrono para consistencia
                 "image": "",  # Sin imagen
                 "mode": mode,
                 "style": style,
@@ -242,11 +243,44 @@ class AsyncWavespeedAPI:
                 async with session.post(endpoint, json=payload) as response:
                     response.raise_for_status()
                     result = await response.json()
-                    print("✅ Text-only prompt optimization completed")
-                    return result
+                    print("✅ Text-only prompt optimization request submitted")
+
+                    # Extract the task ID from the response (can be nested in data)
+                    task_id = (result.get("data", {}).get("id") or
+                              result.get("id") or
+                              result.get("request_id") or
+                              result.get("task_id"))
+                    if not task_id:
+                        logger.error(f"❌ No task ID found in text-only optimization response: {result}")
+                        raise ValueError("No task ID in text-only prompt optimization response")
+
+                    # Poll for result immediately (text-only should be fast)
+                    max_attempts = 10
+                    for attempt in range(max_attempts):
+                        try:
+                            status_result = await self.get_prompt_optimizer_result(task_id)
+
+                            if status_result.get("status") == "completed":
+                                print("✅ Text-only prompt optimization completed")
+                                return status_result
+                            elif status_result.get("status") == "failed":
+                                print("⚠️  Text-only prompt optimization failed on server side")
+                                return {"optimized_prompt": text}  # Return original text
+
+                            await asyncio.sleep(0.3)  # Shorter wait for text-only
+
+                        except Exception as poll_error:
+                            print(f"⚠️  Error polling text-only optimization: {poll_error}")
+                            break
+
+                    # If polling fails, return original text
+                    print("⚠️  Text-only optimization polling failed, using original text")
+                    return {"optimized_prompt": text}
+
         except Exception as e:
             print(f"❌ Text-only prompt optimization failed: {e}")
-            raise
+            # Return original text on failure
+            return {"optimized_prompt": text}
 
     async def add_audio_to_video(self, video_url: str, prompt: str = "") -> Optional[str]:
         """
