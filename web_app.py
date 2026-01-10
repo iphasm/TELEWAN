@@ -467,6 +467,7 @@ async def process_video_generation(
                 task["message"] = "Optimizando descripción con IA..."
 
                 try:
+                    print(f"🤖 Starting text-only optimization for: '{final_prompt[:50]}...'")
                     # Use text-only optimization for T2V (use translated prompt)
                     optimize_result = await api_client.optimize_prompt_text_only(
                         text=final_prompt,
@@ -474,20 +475,30 @@ async def process_video_generation(
                         style="default"
                     )
 
+                    print(f"📋 Text-only optimization result: {optimize_result}")
+
                     # For text-only, the result should be direct
                     if "optimized_prompt" in optimize_result:
                         optimized = optimize_result["optimized_prompt"]
+                        print(f"📝 Found optimized_prompt: '{optimized[:50]}...'")
+                        print(f"📏 Length comparison: {len(optimized.strip())} > {len(final_prompt)} = {len(optimized.strip()) > len(final_prompt)}")
                         if optimized and len(optimized.strip()) > len(final_prompt):
+                            old_prompt = final_prompt
                             final_prompt = optimized
                             task["optimized_prompt"] = final_prompt
-                            print(f"✅ Text-only prompt optimized: {len(optimized)} chars")
+                            print(f"✅ Text-only prompt optimized: '{old_prompt[:30]}...' → '{final_prompt[:30]}...'")
                     elif "result" in optimize_result:
                         # Some APIs return result directly
                         optimized = optimize_result["result"]
+                        print(f"📝 Found result: '{optimized[:50]}...'")
+                        print(f"📏 Length comparison: {len(optimized.strip())} > {len(final_prompt)} = {len(optimized.strip()) > len(final_prompt)}")
                         if optimized and len(optimized.strip()) > len(final_prompt):
+                            old_prompt = final_prompt
                             final_prompt = optimized
                             task["optimized_prompt"] = final_prompt
-                            print(f"✅ Text-only prompt optimized: {len(optimized)} chars")
+                            print(f"✅ Text-only prompt optimized (result): '{old_prompt[:30]}...' → '{final_prompt[:30]}...'")
+                    else:
+                        print(f"⚠️  No optimized_prompt or result found in response: {list(optimize_result.keys())}")
 
                 except Exception as e:
                     print(f"⚠️  Text-only prompt optimization failed: {e}")
@@ -515,12 +526,18 @@ async def process_video_generation(
                             opt_status = await api_client.get_prompt_optimizer_result(task_id)
 
                             if opt_status.get("status") == "completed":
+                                print(f"📋 Image optimization completed, response: {opt_status}")
                                 if "optimized_prompt" in opt_status:
                                     optimized = opt_status["optimized_prompt"]
+                                    print(f"📝 Found optimized_prompt: '{optimized[:50]}...'")
+                                    print(f"📏 Length comparison: {len(optimized.strip())} > {len(final_prompt)} = {len(optimized.strip()) > len(final_prompt)}")
                                     if optimized and len(optimized.strip()) > len(final_prompt):
+                                        old_prompt = final_prompt
                                         final_prompt = optimized
                                         task["optimized_prompt"] = final_prompt
-                                        print(f"✅ Image-based prompt optimized: {len(optimized)} chars")
+                                        print(f"✅ Image-based prompt optimized: '{old_prompt[:30]}...' → '{final_prompt[:30]}...'")
+                                else:
+                                    print(f"⚠️  No optimized_prompt found in completed response: {list(opt_status.keys())}")
                                 break
                             elif opt_status.get("status") == "failed":
                                 print(f"⚠️  Prompt optimization failed on server side")
@@ -544,6 +561,7 @@ async def process_video_generation(
                 print(f"📝 Using original prompt (auto_optimize={auto_optimize}, model={model})")
 
         print(f"🎬 Final prompt: {final_prompt[:100]}...")
+        print(f"📊 Prompt summary: original={len(prompt)} chars, final={len(final_prompt)} chars, was_translated={was_translated}")
 
         task["progress"] = 30
         if model == "text_to_video":
