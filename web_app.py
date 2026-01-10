@@ -572,15 +572,7 @@ async def process_video_generation(
             task["message"] = "Video generation in progress..."
 
             # Step 3: Poll for completion
-            # Handle nested response structure from Wavespeed API
-            request_id = None
-            if video_result.get("data") and video_result["data"].get("id"):
-                request_id = video_result["data"]["id"]
-            elif video_result.get("id"):
-                request_id = video_result["id"]
-            elif video_result.get("request_id"):
-                request_id = video_result["request_id"]
-
+            request_id = video_result.get("id")
             if not request_id:
                 print(f"❌ No request ID in response: {video_result}")
                 raise Exception("No request ID received from API")
@@ -616,21 +608,11 @@ async def process_video_generation(
                         continue
 
                     if status == "completed":
-                        # Check for video URL in nested structure (like original bot)
-                        if status_result.get('data') and status_result['data'].get('outputs'):
-                            task_data = status_result['data']
-                            if len(task_data['outputs']) > 0:
-                                video_url = task_data['outputs'][0]
-                                print(f"🎬 Video URL found in nested outputs: {video_url[:50]}...")
+                        # Extract video URL from outputs array (as per API documentation)
+                        if status_result.get('outputs') and len(status_result['outputs']) > 0:
+                            video_url = status_result['outputs'][0]
+                            print(f"🎬 Video URL found: {video_url[:50]}...")
                         else:
-                            # Fallback to direct fields
-                            video_url = (status_result.get("video_url") or
-                                       status_result.get("video") or
-                                       status_result.get("output") or
-                                       status_result.get("result"))
-                            print(f"🎬 Video URL found in direct fields: {video_url[:50] if video_url else 'None'}...")
-
-                        if not video_url:
                             print(f"❌ No video URL found in response: {status_result}")
                             raise Exception("No video URL received from completed API response")
 
@@ -735,11 +717,7 @@ async def process_video_generation(
                             return
 
                     elif status == "failed":
-                        # Check for error in nested structure too
-                        if status_result.get('data'):
-                            error_msg = status_result['data'].get("error", "Video generation failed on API side")
-                        else:
-                            error_msg = status_result.get("error", "Video generation failed on API side")
+                        error_msg = status_result.get("error", "Video generation failed on API side")
                         print(f"❌ Video generation failed: {error_msg}")
                         raise Exception(f"Video generation failed: {error_msg}")
 

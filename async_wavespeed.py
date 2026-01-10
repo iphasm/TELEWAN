@@ -44,7 +44,7 @@ class AsyncWavespeedAPI:
         model_config = {
             'ultra_fast': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '480p'},
             'fast': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '480p'},
-            'quality': {'duration': 5, 'resolution': '720p'},  # Reducir duración para evitar límites
+            'quality': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '720p'},
             'text_to_video': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '480p'}
         }
 
@@ -73,7 +73,8 @@ class AsyncWavespeedAPI:
                     response.raise_for_status()
                     result = await response.json()
                     logger.info("✅ Video generation request submitted successfully")
-                    return result
+                    # Return the data object directly as shown in the official API example
+                    return result.get("data", result)
             except aiohttp.ClientError as e:
                 logger.error(f"❌ Error en la API de Wavespeed: {e}")
                 raise
@@ -88,7 +89,9 @@ class AsyncWavespeedAPI:
             try:
                 async with session.get(endpoint) as response:
                     response.raise_for_status()
-                    return await response.json()
+                    result = await response.json()
+                    # Return the data object directly as shown in the official API example
+                    return result.get("data", result)
             except aiohttp.ClientError as e:
                 logger.error(f"❌ Error obteniendo estado del video: {e}")
                 raise
