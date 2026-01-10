@@ -44,6 +44,7 @@ tasks: Dict[str, Dict[str, Any]] = {}
 # Rate limiting configuration
 USAGE_FILE = Path("usage_data.json")
 DAILY_LIMIT = 5
+SUSPICIOUS_THRESHOLD = 3  # Número de IPs diferentes antes de marcar como sospechoso
 
 def load_usage_data() -> Dict[str, Any]:
     """Load usage data from file"""
@@ -53,7 +54,13 @@ def load_usage_data() -> Dict[str, Any]:
                 return json.load(f)
         except:
             pass
-    return {"daily_usage": {}, "last_reset": str(date.today())}
+    return {
+        "daily_usage": {},
+        "user_fingerprints": {},  # Maps fingerprint to usage data
+        "ip_fingerprints": {},    # Maps IP to list of fingerprints
+        "suspicious_users": {},   # Users flagged as suspicious
+        "last_reset": str(date.today())
+    }
 
 def save_usage_data(data: Dict[str, Any]):
     """Save usage data to file"""
@@ -69,30 +76,103 @@ def reset_daily_usage_if_needed(usage_data: Dict[str, Any]) -> Dict[str, Any]:
     if usage_data.get("last_reset") != today:
         usage_data["daily_usage"] = {}
         usage_data["last_reset"] = today
+        # Keep fingerprints and suspicious data across days
         save_usage_data(usage_data)
     return usage_data
 
-def check_rate_limit(client_ip: str) -> tuple[bool, int, int]:
+def generate_fingerprint(client_ip: str, user_agent: str = "", fingerprint_data: Dict[str, Any] = None) -> str:
+    """Generate a unique fingerprint for the user"""
+    import hashlib
+
+    # Create fingerprint from available data
+    fingerprint_parts = [client_ip]
+
+    if user_agent:
+        fingerprint_parts.append(user_agent[:50])  # First 50 chars of user agent
+
+    if fingerprint_data:
+        # Add browser fingerprint data if available
+        for key in ['canvas', 'webgl', 'screen', 'timezone']:
+            if key in fingerprint_data:
+                fingerprint_parts.append(str(fingerprint_data[key]))
+
+    # Create hash
+    fingerprint_string = "|".join(fingerprint_parts)
+    return hashlib.sha256(fingerprint_string.encode()).hexdigest()[:16]
+
+def associate_fingerprint_with_ip(usage_data: Dict[str, Any], client_ip: str, fingerprint: str):
+    """Associate a fingerprint with an IP address for tracking"""
+    ip_fingerprints = usage_data.setdefault("ip_fingerprints", {})
+    if client_ip not in ip_fingerprints:
+        ip_fingerprints[client_ip] = []
+
+    if fingerprint not in ip_fingerprints[client_ip]:
+        ip_fingerprints[client_ip].append(fingerprint)
+
+def is_suspicious_user(usage_data: Dict[str, Any], fingerprint: str) -> bool:
+    """Check if user is flagged as suspicious"""
+    suspicious_users = usage_data.get("suspicious_users", {})
+    return fingerprint in suspicious_users
+
+def flag_suspicious_user(usage_data: Dict[str, Any], fingerprint: str, reason: str):
+    """Flag a user as suspicious"""
+    suspicious_users = usage_data.setdefault("suspicious_users", {})
+    suspicious_users[fingerprint] = {
+        "flagged_at": datetime.now().isoformat(),
+        "reason": reason
+    }
+    save_usage_data(usage_data)
+
+def check_rate_limit_advanced(client_ip: str, fingerprint: str, user_agent: str = "") -> tuple[bool, int, int, bool]:
     """
-    Check if client can generate more videos today
-    Returns: (allowed: bool, used: int, remaining: int)
+    Advanced rate limiting using IP + fingerprint + behavior analysis
+    Returns: (allowed: bool, used: int, remaining: int, is_suspicious: bool)
     """
     usage_data = load_usage_data()
     usage_data = reset_daily_usage_if_needed(usage_data)
 
-    daily_usage = usage_data["daily_usage"]
-    used_today = daily_usage.get(client_ip, 0)
+    # Associate fingerprint with IP for tracking
+    associate_fingerprint_with_ip(usage_data, client_ip, fingerprint)
+
+    # Check if user is already flagged as suspicious
+    if is_suspicious_user(usage_data, fingerprint):
+        print(f"🚨 Suspicious user detected: {fingerprint}")
+        return False, 0, 0, True
+
+    # Check for VPN/abuse patterns
+    ip_fingerprints = usage_data.get("ip_fingerprints", {}).get(client_ip, [])
+    if len(ip_fingerprints) > SUSPICIOUS_THRESHOLD:
+        flag_suspicious_user(usage_data, fingerprint, f"Multiple fingerprints from IP: {len(ip_fingerprints)}")
+        return False, 0, 0, True
+
+    # Get usage for this fingerprint (more restrictive than IP alone)
+    user_fingerprints = usage_data.setdefault("user_fingerprints", {})
+    if fingerprint not in user_fingerprints:
+        user_fingerprints[fingerprint] = {"daily_usage": 0, "last_used": None}
+
+    user_data = user_fingerprints[fingerprint]
+    used_today = user_data.get("daily_usage", 0)
     remaining = max(0, DAILY_LIMIT - used_today)
 
-    return used_today < DAILY_LIMIT, used_today, remaining
+    return used_today < DAILY_LIMIT, used_today, remaining, False
 
-def increment_usage(client_ip: str) -> bool:
-    """Increment usage counter for client IP"""
+def increment_usage_advanced(client_ip: str, fingerprint: str) -> bool:
+    """Increment usage counter for fingerprint (more restrictive)"""
     try:
         usage_data = load_usage_data()
         usage_data = reset_daily_usage_if_needed(usage_data)
 
-        daily_usage = usage_data["daily_usage"]
+        # Update fingerprint usage
+        user_fingerprints = usage_data.setdefault("user_fingerprints", {})
+        if fingerprint not in user_fingerprints:
+            user_fingerprints[fingerprint] = {"daily_usage": 0, "last_used": None}
+
+        user_data = user_fingerprints[fingerprint]
+        user_data["daily_usage"] = user_data.get("daily_usage", 0) + 1
+        user_data["last_used"] = datetime.now().isoformat()
+
+        # Also track IP usage for compatibility
+        daily_usage = usage_data.setdefault("daily_usage", {})
         daily_usage[client_ip] = daily_usage.get(client_ip, 0) + 1
 
         save_usage_data(usage_data)
@@ -135,26 +215,42 @@ async def generate_video(
     auto_optimize: bool = Form(False),
     add_audio: bool = Form(False),
     upscale_1080p: bool = Form(False),
+    fingerprint: str = Form(""),  # Browser fingerprint
     request: Request = None  # For getting client IP
 ):
     """
     Start video generation process
     """
     try:
-        # Get client IP for rate limiting
+        # Get client IP and user agent for advanced rate limiting
         client_ip = request.client.host if request else "unknown"
-        print(f"🎯 Request from IP: {client_ip}")
+        user_agent = request.headers.get("user-agent", "") if request else ""
 
-        # Check rate limit
-        allowed, used, remaining = check_rate_limit(client_ip)
+        # Generate or use provided fingerprint
+        if not fingerprint:
+            fingerprint = generate_fingerprint(client_ip, user_agent)
+
+        print(f"🎯 Request from IP: {client_ip}, Fingerprint: {fingerprint[:8]}...")
+
+        # Check advanced rate limit
+        allowed, used, remaining, is_suspicious = check_rate_limit_advanced(client_ip, fingerprint, user_agent)
         if not allowed:
-            return {
-                "error": "Límite diario excedido",
-                "message": f"Has alcanzado el límite de {DAILY_LIMIT} videos por día. Usaste {used} hoy.",
-                "remaining": remaining,
-                "reset_time": "mañana a las 00:00",
-                "upgrade_message": "Actualiza a un plan premium para más videos diarios."
-            }
+            if is_suspicious:
+                return {
+                    "error": "Actividad sospechosa detectada",
+                    "message": "Se ha detectado un patrón de uso inusual. Por favor, contacta con soporte si crees que esto es un error.",
+                    "remaining": 0,
+                    "suspicious": True,
+                    "upgrade_message": "Contacta con soporte para resolver este problema."
+                }
+            else:
+                return {
+                    "error": "Límite diario excedido",
+                    "message": f"Has alcanzado el límite de {DAILY_LIMIT} videos por día. Usaste {used} hoy.",
+                    "remaining": remaining,
+                    "reset_time": "mañana a las 00:00",
+                    "upgrade_message": "Actualiza a un plan premium para más videos diarios."
+                }
 
         # Validate inputs
         if model not in Config.AVAILABLE_MODELS:
@@ -202,8 +298,8 @@ async def generate_video(
 
         print(f"🎯 Processing request: model={model}, has_image={image is not None}, image_url={image_url is not None}")
 
-        # Increment usage counter
-        increment_usage(client_ip)
+        # Increment usage counter (advanced system)
+        increment_usage_advanced(client_ip, fingerprint)
 
         # Start background processing
         background_tasks.add_task(
@@ -624,16 +720,23 @@ async def health_check():
 # Usage check endpoint
 @app.get("/usage")
 async def check_usage(request: Request = None):
-    """Check daily usage for client IP"""
+    """Check daily usage with advanced fingerprinting"""
     client_ip = request.client.host if request else "unknown"
-    allowed, used, remaining = check_rate_limit(client_ip)
+    user_agent = request.headers.get("user-agent", "") if request else ""
+
+    # For usage checking, we create a temporary fingerprint
+    # In production, this would come from browser fingerprinting
+    temp_fingerprint = generate_fingerprint(client_ip, user_agent)
+    allowed, used, remaining, is_suspicious = check_rate_limit_advanced(client_ip, temp_fingerprint, user_agent)
 
     return {
         "ip": client_ip,
+        "fingerprint": temp_fingerprint[:8],
         "used_today": used,
         "remaining_today": remaining,
         "daily_limit": DAILY_LIMIT,
-        "allowed": allowed,
+        "allowed": allowed and not is_suspicious,
+        "suspicious": is_suspicious,
         "reset_time": "mañana a las 00:00"
     }
 

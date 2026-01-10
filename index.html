@@ -451,6 +451,7 @@
         let selectedModel = 'ultra_fast';
         let currentTaskId = null;
         let videoUrl = null;
+        let userFingerprint = null;
 
         // Upload functionality
         uploadArea.addEventListener('click', () => {
@@ -606,6 +607,7 @@
                 formData.append('auto_optimize', autoOptimizeCheckbox.checked);
                 formData.append('add_audio', addAudioCheckbox.checked);
                 formData.append('upscale_1080p', upscale1080pCheckbox.checked);
+                formData.append('fingerprint', userFingerprint || generateBrowserFingerprint());
 
                 // Start generation
                 progressText.textContent = 'Iniciando generación de video...';
@@ -622,6 +624,9 @@
                     // Handle rate limit errors
                     if (result.error === "Límite diario excedido") {
                         showRateLimitError(result);
+                        return;
+                    } else if (result.error === "Actividad sospechosa detectada") {
+                        showSuspiciousUserError(result);
                         return;
                     }
                     throw new Error(`Error ${response.status}: ${response.statusText}`);
@@ -724,6 +729,28 @@
             generateBtn.disabled = true; // Disable button when limit exceeded
         }
 
+        function showSuspiciousUserError(data) {
+            progressSection.classList.add('hidden');
+            resultSection.classList.add('hidden');
+            errorSection.classList.remove('hidden');
+
+            errorText.innerHTML = `
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-gradient-to-r from-orange-500 to-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i data-lucide="shield-alert" class="w-8 h-8 text-white"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold text-white mb-3">Actividad Sospechosa Detectada</h3>
+                    <p class="text-gray-300 mb-4">${data.message}</p>
+                    <p class="text-sm text-gray-400 mb-4">Si crees que esto es un error, por favor contacta con soporte.</p>
+                    <p class="text-sm text-orange-300">${data.upgrade_message}</p>
+                </div>
+            `;
+
+            generateText.classList.remove('hidden');
+            generatingText.classList.add('hidden');
+            generateBtn.disabled = true; // Disable button for suspicious users
+        }
+
         // Download video
         downloadBtn.addEventListener('click', () => {
             if (videoUrl) {
@@ -757,16 +784,73 @@
             errorSection.classList.add('hidden');
         });
 
+        // Generate browser fingerprint
+        function generateBrowserFingerprint() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.textBaseline = 'top';
+            ctx.font = '14px Arial';
+            ctx.fillText('Fingerprint', 2, 2);
+
+            const fingerprint = {
+                userAgent: navigator.userAgent,
+                language: navigator.language,
+                platform: navigator.platform,
+                cookieEnabled: navigator.cookieEnabled,
+                screenResolution: `${screen.width}x${screen.height}`,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                canvas: canvas.toDataURL().substring(0, 50), // Canvas fingerprint
+                webgl: getWebGLFingerprint(),
+                hardwareConcurrency: navigator.hardwareConcurrency || 0
+            };
+
+            // Create hash from fingerprint
+            const fingerprintString = JSON.stringify(fingerprint);
+            let hash = 0;
+            for (let i = 0; i < fingerprintString.length; i++) {
+                const char = fingerprintString.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convert to 32-bit integer
+            }
+
+            return Math.abs(hash).toString(16).substring(0, 16);
+        }
+
+        function getWebGLFingerprint() {
+            try {
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                if (!gl) return 'no-webgl';
+
+                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                if (debugInfo) {
+                    return gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL).substring(0, 30);
+                }
+                return gl.getParameter(gl.RENDERER).substring(0, 30);
+            } catch (e) {
+                return 'webgl-error';
+            }
+        }
+
         // Load usage information on page load
         async function loadUsageInfo() {
             try {
+                // Generate fingerprint if not already done
+                if (!userFingerprint) {
+                    userFingerprint = generateBrowserFingerprint();
+                }
+
                 const response = await fetch('/usage');
                 const data = await response.json();
 
                 const usageText = document.getElementById('usageText');
                 const usageIndicator = document.getElementById('usageIndicator');
 
-                if (data.allowed) {
+                if (data.suspicious) {
+                    usageText.textContent = 'Cuenta suspendida - Contacta soporte';
+                    usageIndicator.classList.remove('bg-gray-800/60', 'border-gray-600/50');
+                    usageIndicator.classList.add('bg-red-900/60', 'border-red-600/50');
+                } else if (data.allowed) {
                     usageText.textContent = `${data.remaining_today} videos restantes hoy`;
                     usageIndicator.classList.remove('bg-red-900/60', 'border-red-600/50');
                     usageIndicator.classList.add('bg-gray-800/60', 'border-gray-600/50');
