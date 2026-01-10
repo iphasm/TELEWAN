@@ -247,33 +247,18 @@
                 </div>
 
                 <!-- Auto Optimize Toggle -->
-                <div class="flex items-center justify-between mb-4 p-4 rounded-xl bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20">
+                <div class="flex items-center justify-between mb-6 p-4 rounded-xl bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20">
                     <div class="flex-1">
                         <h3 class="text-white font-semibold mb-1 flex items-center gap-2">
                             <i data-lucide="brain" class="w-5 h-5 text-purple-400"></i>
                             Optimización IA Avanzada
                         </h3>
                         <p class="text-gray-300 text-sm">Mejora automática de prompts con IA para resultados premium</p>
+                        <p class="text-gray-400 text-xs mt-1">Incluye traducción automática multilingüe</p>
                     </div>
                     <label class="relative inline-flex items-center cursor-pointer ml-4">
                         <input type="checkbox" id="autoOptimize" class="sr-only peer" checked>
                         <div class="w-12 h-7 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-500/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-purple-500 peer-checked:to-blue-500"></div>
-                    </label>
-                </div>
-
-                <!-- Auto Translation Toggle -->
-                <div class="flex items-center justify-between mb-4 p-4 rounded-xl bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20">
-                    <div class="flex-1">
-                        <h3 class="text-white font-semibold mb-1 flex items-center gap-2">
-                            <i data-lucide="languages" class="w-5 h-5 text-green-400"></i>
-                            Traducción Automática
-                        </h3>
-                        <p class="text-gray-300 text-sm">Traduce automáticamente prompts en español al inglés para mejor precisión del modelo</p>
-                        <p class="text-gray-400 text-xs mt-1">Recomendado • Gratuito • Mejor calidad</p>
-                    </div>
-                    <label class="relative inline-flex items-center cursor-pointer ml-4">
-                        <input type="checkbox" id="autoTranslate" class="sr-only peer" checked>
-                        <div class="w-12 h-7 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-500/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-green-500 peer-checked:to-emerald-500"></div>
                     </label>
                 </div>
 
@@ -441,7 +426,6 @@
         const removeImage = document.getElementById('removeImage');
         const promptTextarea = document.getElementById('prompt');
         const autoOptimizeCheckbox = document.getElementById('autoOptimize');
-        const autoTranslateCheckbox = document.getElementById('autoTranslate');
         const addAudioCheckbox = document.getElementById('addAudio');
         const upscale1080pCheckbox = document.getElementById('upscale1080p');
         const generateBtn = document.getElementById('generateBtn');
@@ -622,7 +606,6 @@
                 formData.append('prompt', promptTextarea.value.trim());
                 formData.append('model', selectedModel);
                 formData.append('auto_optimize', autoOptimizeCheckbox.checked);
-                formData.append('auto_translate', autoTranslateCheckbox.checked);
                 formData.append('add_audio', addAudioCheckbox.checked);
                 formData.append('upscale_1080p', upscale1080pCheckbox.checked);
                 formData.append('fingerprint', userFingerprint || generateBrowserFingerprint());
@@ -704,12 +687,8 @@
             resultSection.classList.remove('hidden');
             errorSection.classList.add('hidden');
 
-            // Display prompt information with translation/optimization details
-            let promptInfo = result.prompt_used || result.original_prompt || promptTextarea.value;
-
-            if (result.was_translated) {
-                promptInfo += '\n\n🌐 Traducido automáticamente del español al inglés para mejor precisión del modelo.';
-            }
+            // Display prompt information
+            let promptInfo = result.prompt_used || promptTextarea.value;
 
             if (result.was_optimized) {
                 promptInfo += '\n\n🤖 Prompt optimizado con IA para mejores resultados.';
@@ -799,7 +778,6 @@
             uploadContent.classList.remove('hidden');
             promptTextarea.value = '';
             autoOptimizeCheckbox.checked = false;
-            autoTranslateCheckbox.checked = false;
             addAudioCheckbox.checked = false;
             upscale1080pCheckbox.checked = false;
             updateTimeEstimation();

@@ -148,7 +148,7 @@ def detect_language(text: str) -> str:
 
 def translate_to_english(text: str) -> tuple[str, bool]:
     """
-    Translate text to English if it's not already in English
+    Silently translate any non-English text to English for better AI results
     Returns: (translated_text, was_translated)
     """
     if not TRANSLATION_AVAILABLE:
@@ -160,14 +160,18 @@ def translate_to_english(text: str) -> tuple[str, bool]:
         if detected_lang == "en":
             return text, False
 
-        if detected_lang == "es":  # Only translate from Spanish for now
-            translator = GoogleTranslator(source='es', target='en')
+        # Translate from any detected language to English
+        try:
+            translator = GoogleTranslator(source=detected_lang, target='en')
             translated = translator.translate(text)
-            print(f"🌐 Translated from Spanish: '{text[:50]}...' → '{translated[:50]}...'")
+            print(f"🌐 Auto-translated from {detected_lang}: '{text[:50]}...' → '{translated[:50]}...'")
             return translated, True
-
-        # For other languages, keep original for now
-        return text, False
+        except:
+            # If specific language detection fails, try auto-detection
+            translator = GoogleTranslator(source='auto', target='en')
+            translated = translator.translate(text)
+            print(f"🌐 Auto-translated (auto-detect): '{text[:50]}...' → '{translated[:50]}...'")
+            return translated, True
 
     except Exception as e:
         print(f"⚠️ Translation error: {e}")
@@ -263,7 +267,6 @@ async def generate_video(
     prompt: str = Form(...),
     model: str = Form("ultra_fast"),
     auto_optimize: bool = Form(False),
-    auto_translate: bool = Form(True),  # Auto-translate by default
     add_audio: bool = Form(False),
     upscale_1080p: bool = Form(False),
     fingerprint: str = Form(""),  # Browser fingerprint
@@ -361,7 +364,6 @@ async def generate_video(
             image_url,
             model,
             auto_optimize,
-            auto_translate,
             add_audio,
             upscale_1080p
         )
@@ -395,11 +397,8 @@ async def get_task_status(task_id: str):
             "status": "completed",
             "video_url": task["video_url"],
             "prompt_used": task["optimized_prompt"] or task["translated_prompt"] or task["original_prompt"],
-            "original_prompt": task["original_prompt"],
             "model": task["model"],
-            "was_translated": task.get("original_language") == "es",
-            "was_optimized": bool(task.get("optimized_prompt")),
-            "original_language": task.get("original_language")
+            "was_optimized": bool(task.get("optimized_prompt"))
         }
     elif task["status"] == "failed":
         return {
@@ -420,7 +419,6 @@ async def process_video_generation(
     image_url: Optional[str],
     model: str,
     auto_optimize: bool,
-    auto_translate: bool,
     add_audio: bool,
     upscale_1080p: bool
 ):
@@ -435,19 +433,19 @@ async def process_video_generation(
         else:
             task["message"] = "Preparando generación de video desde imagen..."
 
-        # Step 1: Translate prompt if needed, then optimize if requested
+        # Step 1: Silently translate to English if needed, then optimize if requested
         final_prompt = prompt
         original_language = detect_language(prompt)
         was_translated = False
 
-        # Auto-translate Spanish prompts to English for better AI results (if enabled)
-        if auto_translate and original_language == "es":
+        # Silently auto-translate any non-English prompts to English for better AI results
+        if original_language != "en":
             translated_prompt, was_translated = translate_to_english(prompt)
             if was_translated:
-                print(f"🌐 Auto-translated prompt from Spanish to English")
                 final_prompt = translated_prompt
                 task["translated_prompt"] = final_prompt
-                task["original_language"] = "es"
+                task["original_prompt"] = prompt  # Keep original for reference
+                task["original_language"] = original_language
 
         # Determine progress message based on content type
         is_text_only = (model == "text_to_video")
@@ -455,10 +453,7 @@ async def process_video_generation(
         if auto_optimize:
             if is_text_only:
                 task["progress"] = 20
-                if was_translated:
-                    task["message"] = "Traduciendo y optimizando descripción con IA..."
-                else:
-                    task["message"] = "Optimizando descripción con IA..."
+                task["message"] = "Optimizando descripción con IA..."
 
                 try:
                     # Use text-only optimization for T2V
@@ -489,10 +484,7 @@ async def process_video_generation(
 
             elif image_url:
                 task["progress"] = 20
-                if was_translated:
-                    task["message"] = "Traduciendo y analizando imagen para optimización..."
-                else:
-                    task["message"] = "Analizando imagen y optimizando descripción..."
+                task["message"] = "Analizando imagen y optimizando descripción..."
 
                 try:
                     optimize_result = await api_client.optimize_prompt_v3(
