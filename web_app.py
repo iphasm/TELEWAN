@@ -194,43 +194,85 @@ async def process_video_generation(
     try:
         task = tasks[task_id]
         task["progress"] = 10
-        task["message"] = "Initializing..."
+        if model == "text_to_video":
+            task["message"] = "Preparando generación de video desde texto..."
+        else:
+            task["message"] = "Preparando generación de video desde imagen..."
 
         # Step 1: Optimize prompt if requested
         final_prompt = prompt
-        if auto_optimize and image_url:
-            task["progress"] = 20
-            task["message"] = "Optimizing prompt with AI..."
 
-            try:
-                optimize_result = await api_client.optimize_prompt_v3(
-                    image_url=image_url,
-                    text=prompt,
-                    mode="video",
-                    style="default"
-                )
+        # Determine progress message based on content type
+        is_text_only = (model == "text_to_video")
 
-                # Wait for optimization to complete
-                await asyncio.sleep(2)  # Brief wait
-                opt_status = await api_client.get_prompt_optimizer_result(optimize_result["id"])
+        if auto_optimize:
+            if is_text_only:
+                task["progress"] = 20
+                task["message"] = "Optimizando descripción con IA..."
 
-                if "optimized_prompt" in opt_status:
-                    optimized = opt_status["optimized_prompt"]
-                    if optimized and len(optimized.strip()) > len(prompt):
-                        final_prompt = optimized
-                        task["optimized_prompt"] = final_prompt
-                        print(f"✅ Prompt optimized: {len(optimized)} chars")
+                try:
+                    # Use text-only optimization for T2V
+                    optimize_result = await api_client.optimize_prompt_text_only(
+                        text=prompt,
+                        mode="video",
+                        style="default"
+                    )
 
-            except Exception as e:
-                print(f"⚠️  Prompt optimization failed: {e}")
-                # Continue with original prompt
-        else:
-            print(f"📝 Using original prompt (auto_optimize={auto_optimize}, has_image={image_url is not None})")
+                    # For text-only, the result should be direct
+                    if "optimized_prompt" in optimize_result:
+                        optimized = optimize_result["optimized_prompt"]
+                        if optimized and len(optimized.strip()) > len(prompt):
+                            final_prompt = optimized
+                            task["optimized_prompt"] = final_prompt
+                            print(f"✅ Text-only prompt optimized: {len(optimized)} chars")
+                    elif "result" in optimize_result:
+                        # Some APIs return result directly
+                        optimized = optimize_result["result"]
+                        if optimized and len(optimized.strip()) > len(prompt):
+                            final_prompt = optimized
+                            task["optimized_prompt"] = final_prompt
+                            print(f"✅ Text-only prompt optimized: {len(optimized)} chars")
+
+                except Exception as e:
+                    print(f"⚠️  Text-only prompt optimization failed: {e}")
+                    # Continue with original prompt
+
+            elif image_url:
+                task["progress"] = 20
+                task["message"] = "Analizando imagen y optimizando descripción..."
+
+                try:
+                    optimize_result = await api_client.optimize_prompt_v3(
+                        image_url=image_url,
+                        text=prompt,
+                        mode="video",
+                        style="default"
+                    )
+
+                    # Wait for optimization to complete
+                    await asyncio.sleep(2)  # Brief wait
+                    opt_status = await api_client.get_prompt_optimizer_result(optimize_result["id"])
+
+                    if "optimized_prompt" in opt_status:
+                        optimized = opt_status["optimized_prompt"]
+                        if optimized and len(optimized.strip()) > len(prompt):
+                            final_prompt = optimized
+                            task["optimized_prompt"] = final_prompt
+                            print(f"✅ Image-based prompt optimized: {len(optimized)} chars")
+
+                except Exception as e:
+                    print(f"⚠️  Image-based prompt optimization failed: {e}")
+                    # Continue with original prompt
+            else:
+                print(f"📝 Using original prompt (auto_optimize={auto_optimize}, model={model})")
 
         print(f"🎬 Final prompt: {final_prompt[:100]}...")
 
         task["progress"] = 30
-        task["message"] = "Starting video generation..."
+        if model == "text_to_video":
+            task["message"] = "Generando video desde descripción textual..."
+        else:
+            task["message"] = "Generando video desde imagen..."
 
         # Step 2: Generate video
         try:

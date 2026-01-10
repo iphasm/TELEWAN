@@ -209,6 +209,32 @@ class AsyncWavespeedAPI:
 
         return base_message
 
+    async def optimize_prompt_text_only(self, text: str, mode: str = "video", style: str = "default") -> Dict[str, Any]:
+        """
+        Optimiza un prompt de texto solo (sin imagen) usando WaveSpeedAI
+        """
+        try:
+            endpoint = f"{self.base_url}/api/v3/wavespeed-ai/prompt-optimizer"
+
+            payload = {
+                "enable_sync_mode": True,  # Modo síncrono para texto solo
+                "image": "",  # Sin imagen
+                "mode": mode,
+                "style": style,
+                "text": text
+            }
+
+            print(f"🤖 Optimizing text-only prompt: {text[:50]}...")
+            async with aiohttp.ClientSession(headers=self.headers) as session:
+                async with session.post(endpoint, json=payload) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    print("✅ Text-only prompt optimization completed")
+                    return result
+        except Exception as e:
+            print(f"❌ Text-only prompt optimization failed: {e}")
+            raise
+
     async def add_audio_to_video(self, video_url: str, prompt: str = "") -> Optional[str]:
         """
         Add audio/foley to a video using WavespeedAI audio API
