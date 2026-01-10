@@ -477,14 +477,14 @@ async def process_video_generation(
                     # For text-only, the result should be direct
                     if "optimized_prompt" in optimize_result:
                         optimized = optimize_result["optimized_prompt"]
-                        if optimized and len(optimized.strip()) > len(prompt):
+                        if optimized and len(optimized.strip()) > len(final_prompt):
                             final_prompt = optimized
                             task["optimized_prompt"] = final_prompt
                             print(f"✅ Text-only prompt optimized: {len(optimized)} chars")
                     elif "result" in optimize_result:
                         # Some APIs return result directly
                         optimized = optimize_result["result"]
-                        if optimized and len(optimized.strip()) > len(prompt):
+                        if optimized and len(optimized.strip()) > len(final_prompt):
                             final_prompt = optimized
                             task["optimized_prompt"] = final_prompt
                             print(f"✅ Text-only prompt optimized: {len(optimized)} chars")
