@@ -507,7 +507,7 @@ async def process_video_generation(
 
                     # Poll for optimization result with timeout
                     task_id = optimize_result["id"]
-                    max_attempts = 10
+                    max_attempts = 5  # Reducir de 10 a 5 intentos
                     attempt = 0
 
                     while attempt < max_attempts:
@@ -517,7 +517,7 @@ async def process_video_generation(
                             if opt_status.get("status") == "completed":
                                 if "optimized_prompt" in opt_status:
                                     optimized = opt_status["optimized_prompt"]
-                                    if optimized and len(optimized.strip()) > len(prompt):
+                                    if optimized and len(optimized.strip()) > len(final_prompt):
                                         final_prompt = optimized
                                         task["optimized_prompt"] = final_prompt
                                         print(f"✅ Image-based prompt optimized: {len(optimized)} chars")
@@ -526,8 +526,8 @@ async def process_video_generation(
                                 print(f"⚠️  Prompt optimization failed on server side")
                                 break
 
-                            # Wait before next attempt
-                            await asyncio.sleep(1)
+                            # Wait before next attempt (reducir tiempo)
+                            await asyncio.sleep(0.5)
                             attempt += 1
 
                         except Exception as poll_error:
@@ -535,7 +535,7 @@ async def process_video_generation(
                             break
 
                     if attempt >= max_attempts:
-                        print(f"⚠️  Prompt optimization timed out after {max_attempts} attempts")
+                        print(f"⚠️  Prompt optimization timed out after {max_attempts} attempts, continuing with original prompt")
 
                 except Exception as e:
                     print(f"⚠️  Image-based prompt optimization failed: {e}")
