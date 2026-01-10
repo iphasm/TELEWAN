@@ -118,11 +118,29 @@ async def lifespan(app: FastAPI):
             logger.info("✅ Aplicación de Telegram registrada en app_state")
 
             # Configurar webhook si está habilitado
-            if Config.WEBHOOK_URL:
-                try:
-                    await setup_webhook(telegram_app)
-                except Exception as webhook_error:
-                    logger.warning(f"⚠️  Webhook no configurado: {webhook_error} - usando polling")
+            if Config.USE_WEBHOOK:
+                # Si estamos en Railway pero no hay WEBHOOK_URL, intentar inferirla
+                if not Config.WEBHOOK_URL and os.getenv('RAILWAY_ENVIRONMENT'):
+                    # Intentar inferir la URL de Railway
+                    railway_url = f"https://{os.getenv('RAILWAY_PROJECT_ID', 'unknown')}.up.railway.app"
+                    logger.info(f"🔄 Inferiendo WEBHOOK_URL de Railway: {railway_url}")
+                    # Configurar temporalmente para este contexto
+                    Config.WEBHOOK_URL = railway_url
+
+                if Config.WEBHOOK_URL:
+                    try:
+                        await setup_webhook(telegram_app)
+                        logger.info("✅ Webhook configurado correctamente")
+                    except Exception as webhook_error:
+                        logger.error(f"❌ Error configurando webhook: {webhook_error}")
+                        logger.warning("⚠️  El bot no funcionará sin webhook en Railway")
+                        raise webhook_error  # En Railway, webhook es obligatorio
+                else:
+                    logger.error("❌ WEBHOOK_URL no configurada - requerida para Railway")
+                    logger.error("💡 Configura WEBHOOK_URL en las variables de entorno de Railway")
+                    raise ValueError("WEBHOOK_URL requerida para funcionamiento en Railway")
+            else:
+                logger.warning("⚠️  USE_WEBHOOK=false - el bot no funcionará en Railway sin webhooks")
 
             logger.info("🎯 Sistema Event-Driven operativo")
 

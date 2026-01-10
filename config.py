@@ -230,7 +230,9 @@ class Config:
     VOLUME_PATH = os.getenv('VOLUME_PATH', './storage')  # Default: ./storage
 
     # Webhook configuration
-    USE_WEBHOOK = os.getenv('USE_WEBHOOK', 'false').lower() == 'true'
+    # En Railway, forzar webhooks ya que polling no funciona
+    is_railway = os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_PROJECT_ID')
+    USE_WEBHOOK = os.getenv('USE_WEBHOOK', 'true' if is_railway else 'false').lower() == 'true'
     WEBHOOK_URL = os.getenv('WEBHOOK_URL')  # URL completa del webhook
     # Railway asigna el puerto automáticamente mediante la variable PORT
     WEBHOOK_PORT = int(os.getenv('PORT', os.getenv('WEBHOOK_PORT', '8443')))

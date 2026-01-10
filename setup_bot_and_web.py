@@ -13,11 +13,21 @@ def check_env_vars():
     print("🔧 VERIFICACIÓN DE VARIABLES DE ENTORNO")
     print("=" * 50)
 
+    # Detectar si estamos en Railway
+    is_railway = os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_PROJECT_ID')
+    if is_railway:
+        print("🚂 Detectado entorno Railway - usando configuración optimizada")
+    else:
+        print("💻 Entorno local detectado")
+
     required_vars = {
         'TELEGRAM_BOT_TOKEN': 'Token del bot de Telegram (requerido para el bot)',
         'WAVESPEED_API_KEY': 'API Key de WaveSpeed AI (requerido para generar videos)',
-        'WEBHOOK_URL': 'URL completa de tu app en Railway (requerido para webhook)',
     }
+
+    # WEBHOOK_URL solo requerida en Railway
+    if is_railway:
+        required_vars['WEBHOOK_URL'] = 'URL completa de tu app en Railway (requerido para Railway)'
 
     missing = []
     for var, description in required_vars.items():
@@ -29,6 +39,13 @@ def check_env_vars():
             print(f"❌ {var}: NO CONFIGURADO")
             print(f"   💡 {description}")
             missing.append(var)
+
+    # Mostrar configuración de webhook
+    use_webhook = os.getenv('USE_WEBHOOK', 'true' if is_railway else 'false').lower() == 'true'
+    print(f"🔗 USE_WEBHOOK: {'✅ Activado' if use_webhook else '❌ Desactivado'}")
+    if is_railway and not use_webhook:
+        print("   ⚠️  ADVERTENCIA: En Railway, webhooks son obligatorios")
+        missing.append('USE_WEBHOOK')
 
     print()
     return missing
@@ -62,11 +79,16 @@ def show_railway_setup_instructions(missing_vars):
             print("       3. Copia la key generada")
             print()
         elif var == 'WEBHOOK_URL':
-            print(f"   • {var} = https://[tu-app].railway.app")
+            print(f"   • {var} = https://[tu-proyecto].up.railway.app")
             print("     💡 Cómo obtener:")
-            print("       1. En Railway, ve a tu app desplegada")
-            print("       2. Copia la URL completa (incluyendo https://)")
-            print("       3. Ejemplo: https://telewan-production.up.railway.app")
+            print("       1. En Railway dashboard, ve a tu proyecto")
+            print("       2. Copia el dominio que aparece (ej: telewan-production.up.railway.app)")
+            print("       3. Agrega https:// al inicio")
+            print("       4. Ejemplo: https://telewan-production.up.railway.app")
+            print()
+        elif var == 'USE_WEBHOOK':
+            print("   • USE_WEBHOOK = true")
+            print("     💡 En Railway, webhooks son obligatorios")
             print()
 
     print("5. Después de agregar las variables:")
