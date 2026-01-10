@@ -12,7 +12,8 @@ WORKDIR /app
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    python -c "import deep_translator, langdetect; print('✅ Translation libraries installed successfully')"
 
 # Production stage
 FROM base as production

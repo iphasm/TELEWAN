@@ -25,6 +25,7 @@ except ImportError:
     LangDetectError = Exception
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks, Request
+from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,21 +34,7 @@ import uvicorn
 from async_wavespeed import AsyncWavespeedAPI
 from config import Config
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="SynthClip API",
-    description="API for SynthClip video generation with AI",
-    version="1.0.0"
-)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# FastAPI app will be created later with lifespan
 
 # Global variables
 api_client = AsyncWavespeedAPI()
@@ -239,9 +226,9 @@ def increment_usage_advanced(client_ip: str, fingerprint: str) -> bool:
 storage_dir = Path(Config.VOLUME_PATH)
 storage_dir.mkdir(exist_ok=True)
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize the application"""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for FastAPI application"""
     try:
         Config.validate()
         print("✅ SynthClip Web App initialized successfully")
@@ -250,6 +237,28 @@ async def startup_event():
     except ValueError as e:
         print(f"❌ Configuration error: {e}")
         raise
+
+    yield
+
+    # Cleanup (if needed)
+    pass
+
+# Create FastAPI app with lifespan
+app = FastAPI(
+    title="SynthClip API",
+    description="API for SynthClip video generation with AI",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure appropriately for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
@@ -326,7 +335,6 @@ async def generate_video(
             "created_at": datetime.now(),
             "model": model,
             "auto_optimize": auto_optimize,
-            "auto_translate": auto_translate,
             "add_audio": add_audio,
             "upscale_1080p": upscale_1080p,
             "original_prompt": prompt,
