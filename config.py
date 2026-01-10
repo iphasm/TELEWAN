@@ -20,7 +20,7 @@ class Config:
         # Modelos actuales
         'ultra_fast': 'wan-2.2/i2v-480p-ultra-fast',
         'fast': 'wan-2.2/i2v-480p-fast',
-        'quality': 'wan-2.2/i2v-720p-quality',
+        'quality': 'wan-2.2/i2v-720p-fast',  # Modelo fast en calidad 720p
         'text_to_video': 'wan-2.2/t2v-480p-ultra-fast',
 
         # Modelos expandidos (futuros)
