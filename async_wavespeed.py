@@ -165,8 +165,15 @@ class AsyncWavespeedAPI:
                 async with session.post(endpoint, json=payload) as response:
                     response.raise_for_status()
                     result = await response.json()
-                    logger.info("✅ Prompt optimization request submitted successfully")
-                    return result
+                    logger.info(f"✅ Prompt optimization request submitted successfully: {result}")
+
+                    # Extract the task ID from the response
+                    task_id = result.get("id") or result.get("request_id") or result.get("task_id")
+                    if not task_id:
+                        logger.error(f"❌ No task ID found in response: {result}")
+                        raise ValueError("No task ID in prompt optimization response")
+
+                    return {"id": task_id, "result": result}
             except aiohttp.ClientError as e:
                 logger.error(f"❌ Error en nuevo prompt optimizer v3: {e}")
                 raise

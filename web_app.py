@@ -17,8 +17,8 @@ try:
     from deep_translator import GoogleTranslator
     from langdetect import detect, LangDetectError
     TRANSLATION_AVAILABLE = True
-except ImportError:
-    print("⚠️ Translation libraries not available. Install with: pip install deep-translator langdetect")
+except ImportError as e:
+    print(f"⚠️ Translation libraries import failed: {e}. Install with: pip install deep-translator langdetect")
     TRANSLATION_AVAILABLE = False
     GoogleTranslator = None
     detect = None
@@ -502,16 +502,37 @@ async def process_video_generation(
                         style="default"
                     )
 
-                    # Wait for optimization to complete
-                    await asyncio.sleep(2)  # Brief wait
-                    opt_status = await api_client.get_prompt_optimizer_result(optimize_result["id"])
+                    # Poll for optimization result with timeout
+                    task_id = optimize_result["id"]
+                    max_attempts = 10
+                    attempt = 0
 
-                    if "optimized_prompt" in opt_status:
-                        optimized = opt_status["optimized_prompt"]
-                        if optimized and len(optimized.strip()) > len(prompt):
-                            final_prompt = optimized
-                            task["optimized_prompt"] = final_prompt
-                            print(f"✅ Image-based prompt optimized: {len(optimized)} chars")
+                    while attempt < max_attempts:
+                        try:
+                            opt_status = await api_client.get_prompt_optimizer_result(task_id)
+
+                            if opt_status.get("status") == "completed":
+                                if "optimized_prompt" in opt_status:
+                                    optimized = opt_status["optimized_prompt"]
+                                    if optimized and len(optimized.strip()) > len(prompt):
+                                        final_prompt = optimized
+                                        task["optimized_prompt"] = final_prompt
+                                        print(f"✅ Image-based prompt optimized: {len(optimized)} chars")
+                                break
+                            elif opt_status.get("status") == "failed":
+                                print(f"⚠️  Prompt optimization failed on server side")
+                                break
+
+                            # Wait before next attempt
+                            await asyncio.sleep(1)
+                            attempt += 1
+
+                        except Exception as poll_error:
+                            print(f"⚠️  Error polling prompt optimization: {poll_error}")
+                            break
+
+                    if attempt >= max_attempts:
+                        print(f"⚠️  Prompt optimization timed out after {max_attempts} attempts")
 
                 except Exception as e:
                     print(f"⚠️  Image-based prompt optimization failed: {e}")
