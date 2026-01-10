@@ -12,7 +12,7 @@ aiohttp>=3.9.0
 aiofiles==23.1.0
 
 # Translation dependencies
-deep-translator>=1.11.0
-langdetect>=1.0.9
+deep-translator==1.11.4
+langdetect==1.0.9
 
 

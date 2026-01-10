@@ -15,8 +15,10 @@ from pathlib import Path
 # Translation imports
 try:
     from deep_translator import GoogleTranslator
-    from langdetect import detect, LangDetectError
+    from langdetect import detect
     TRANSLATION_AVAILABLE = True
+    # Define exception for langdetect errors (langdetect doesn't export LangDetectError in some versions)
+    LangDetectError = Exception
 except ImportError as e:
     print(f"⚠️ Translation libraries import failed: {e}. Install with: pip install deep-translator langdetect")
     TRANSLATION_AVAILABLE = False
@@ -130,7 +132,8 @@ def detect_language(text: str) -> str:
 
     try:
         return detect(text)
-    except LangDetectError:
+    except Exception as e:
+        print(f"⚠️ Language detection failed: {e}")
         return "en"  # Default to English on detection error
 
 def translate_to_english(text: str) -> tuple[str, bool]:
