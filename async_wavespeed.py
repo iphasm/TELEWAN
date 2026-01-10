@@ -44,7 +44,7 @@ class AsyncWavespeedAPI:
         model_config = {
             'ultra_fast': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '480p'},
             'fast': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '480p'},
-            'quality': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '720p'},
+            'quality': {'duration': 5, 'resolution': '720p'},  # Reducir duración para evitar límites
             'text_to_video': {'duration': Config.MAX_VIDEO_DURATION, 'resolution': '480p'}
         }
 
