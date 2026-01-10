@@ -12,6 +12,18 @@ from typing import Dict, Any, Optional
 from datetime import datetime, date
 from pathlib import Path
 
+# Translation imports
+try:
+    from googletrans import Translator
+    from langdetect import detect, LangDetectError
+    TRANSLATION_AVAILABLE = True
+except ImportError:
+    print("⚠️ Translation libraries not available. Install with: pip install googletrans langdetect")
+    TRANSLATION_AVAILABLE = False
+    Translator = None
+    detect = None
+    LangDetectError = Exception
+
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
@@ -123,6 +135,44 @@ def flag_suspicious_user(usage_data: Dict[str, Any], fingerprint: str, reason: s
     }
     save_usage_data(usage_data)
 
+# Translation functions
+def detect_language(text: str) -> str:
+    """Detect the language of the given text"""
+    if not TRANSLATION_AVAILABLE:
+        return "en"  # Default to English if translation not available
+
+    try:
+        return detect(text)
+    except LangDetectError:
+        return "en"  # Default to English on detection error
+
+def translate_to_english(text: str) -> tuple[str, bool]:
+    """
+    Translate text to English if it's not already in English
+    Returns: (translated_text, was_translated)
+    """
+    if not TRANSLATION_AVAILABLE:
+        return text, False
+
+    try:
+        detected_lang = detect_language(text)
+
+        if detected_lang == "en":
+            return text, False
+
+        if detected_lang == "es":  # Only translate from Spanish for now
+            translator = Translator()
+            translated = translator.translate(text, src="es", dest="en").text
+            print(f"🌐 Translated from Spanish: '{text[:50]}...' → '{translated[:50]}...'")
+            return translated, True
+
+        # For other languages, keep original for now
+        return text, False
+
+    except Exception as e:
+        print(f"⚠️ Translation error: {e}")
+        return text, False
+
 def check_rate_limit_advanced(client_ip: str, fingerprint: str, user_agent: str = "") -> tuple[bool, int, int, bool]:
     """
     Advanced rate limiting using IP + fingerprint + behavior analysis
@@ -213,6 +263,7 @@ async def generate_video(
     prompt: str = Form(...),
     model: str = Form("ultra_fast"),
     auto_optimize: bool = Form(False),
+    auto_translate: bool = Form(True),  # Auto-translate by default
     add_audio: bool = Form(False),
     upscale_1080p: bool = Form(False),
     fingerprint: str = Form(""),  # Browser fingerprint
@@ -272,6 +323,7 @@ async def generate_video(
             "created_at": datetime.now(),
             "model": model,
             "auto_optimize": auto_optimize,
+            "auto_translate": auto_translate,
             "add_audio": add_audio,
             "upscale_1080p": upscale_1080p,
             "original_prompt": prompt,
@@ -309,6 +361,7 @@ async def generate_video(
             image_url,
             model,
             auto_optimize,
+            auto_translate,
             add_audio,
             upscale_1080p
         )
@@ -341,8 +394,12 @@ async def get_task_status(task_id: str):
         return {
             "status": "completed",
             "video_url": task["video_url"],
-            "prompt_used": task["optimized_prompt"] or task["original_prompt"],
-            "model": task["model"]
+            "prompt_used": task["optimized_prompt"] or task["translated_prompt"] or task["original_prompt"],
+            "original_prompt": task["original_prompt"],
+            "model": task["model"],
+            "was_translated": task.get("original_language") == "es",
+            "was_optimized": bool(task.get("optimized_prompt")),
+            "original_language": task.get("original_language")
         }
     elif task["status"] == "failed":
         return {
@@ -363,6 +420,7 @@ async def process_video_generation(
     image_url: Optional[str],
     model: str,
     auto_optimize: bool,
+    auto_translate: bool,
     add_audio: bool,
     upscale_1080p: bool
 ):
@@ -377,8 +435,19 @@ async def process_video_generation(
         else:
             task["message"] = "Preparando generación de video desde imagen..."
 
-        # Step 1: Optimize prompt if requested
+        # Step 1: Translate prompt if needed, then optimize if requested
         final_prompt = prompt
+        original_language = detect_language(prompt)
+        was_translated = False
+
+        # Auto-translate Spanish prompts to English for better AI results (if enabled)
+        if auto_translate and original_language == "es":
+            translated_prompt, was_translated = translate_to_english(prompt)
+            if was_translated:
+                print(f"🌐 Auto-translated prompt from Spanish to English")
+                final_prompt = translated_prompt
+                task["translated_prompt"] = final_prompt
+                task["original_language"] = "es"
 
         # Determine progress message based on content type
         is_text_only = (model == "text_to_video")
@@ -386,7 +455,10 @@ async def process_video_generation(
         if auto_optimize:
             if is_text_only:
                 task["progress"] = 20
-                task["message"] = "Optimizando descripción con IA..."
+                if was_translated:
+                    task["message"] = "Traduciendo y optimizando descripción con IA..."
+                else:
+                    task["message"] = "Optimizando descripción con IA..."
 
                 try:
                     # Use text-only optimization for T2V
@@ -417,7 +489,10 @@ async def process_video_generation(
 
             elif image_url:
                 task["progress"] = 20
-                task["message"] = "Analizando imagen y optimizando descripción..."
+                if was_translated:
+                    task["message"] = "Traduciendo y analizando imagen para optimización..."
+                else:
+                    task["message"] = "Analizando imagen y optimizando descripción..."
 
                 try:
                     optimize_result = await api_client.optimize_prompt_v3(

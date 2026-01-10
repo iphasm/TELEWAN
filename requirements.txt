@@ -13,6 +13,8 @@ aiofiles==23.1.0
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
+googletrans==4.0.0rc1
+langdetect>=1.0.9
 
 # Redis dependencies (Fase 3 - preparado)
 redis>=5.0.0
