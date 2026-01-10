@@ -7,6 +7,7 @@ import uuid
 import re
 import subprocess
 import asyncio
+import sys
 from datetime import datetime
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
@@ -15,6 +16,12 @@ from typing import Dict, Any, Optional
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Message
+
+# DEBUG: Ejecutar diagnóstico de Railway al inicio
+if len(sys.argv) > 1 and sys.argv[1] == 'debug':
+    from debug_railway_startup import debug_railway_environment
+    debug_railway_environment()
+    sys.exit(0)
 
 # Import opcional para curl_cffi (se verifica después de definir logger)
 CURL_CFFI_AVAILABLE = False
