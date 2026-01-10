@@ -123,6 +123,8 @@ async def generate_video(
             base_url = os.getenv('BASE_URL', 'http://localhost:8000').rstrip('/')
             image_url = f"{base_url}/images/{image_path.name}"
 
+        print(f"🎯 Processing request: model={model}, has_image={image is not None}, image_url={image_url is not None}")
+
         # Start background processing
         background_tasks.add_task(
             process_video_generation,
@@ -222,6 +224,10 @@ async def process_video_generation(
             except Exception as e:
                 print(f"⚠️  Prompt optimization failed: {e}")
                 # Continue with original prompt
+        else:
+            print(f"📝 Using original prompt (auto_optimize={auto_optimize}, has_image={image_url is not None})")
+
+        print(f"🎬 Final prompt: {final_prompt[:100]}...")
 
         task["progress"] = 30
         task["message"] = "Starting video generation..."
@@ -296,14 +302,18 @@ async def process_video_generation(
                             task_data = status_result['data']
                             if len(task_data['outputs']) > 0:
                                 video_url = task_data['outputs'][0]
+                                print(f"🎬 Video URL found in nested outputs: {video_url[:50]}...")
                         else:
                             # Fallback to direct fields
                             video_url = (status_result.get("video_url") or
                                        status_result.get("video") or
                                        status_result.get("output") or
                                        status_result.get("result"))
+                            print(f"🎬 Video URL found in direct fields: {video_url[:50] if video_url else 'None'}...")
 
-                        print(f"🎬 Video URL found: {video_url[:50]}...")
+                        if not video_url:
+                            print(f"❌ No video URL found in response: {status_result}")
+                            raise Exception("No video URL received from completed API response")
 
                         if video_url:
                             # Download and save video
