@@ -467,9 +467,9 @@ async def process_video_generation(
                 task["message"] = "Optimizando descripción con IA..."
 
                 try:
-                    # Use text-only optimization for T2V
+                    # Use text-only optimization for T2V (use translated prompt)
                     optimize_result = await api_client.optimize_prompt_text_only(
-                        text=prompt,
+                        text=final_prompt,
                         mode="video",
                         style="default"
                     )
@@ -500,7 +500,7 @@ async def process_video_generation(
                 try:
                     optimize_result = await api_client.optimize_prompt_v3(
                         image_url=image_url,
-                        text=prompt,
+                        text=final_prompt,
                         mode="video",
                         style="default"
                     )

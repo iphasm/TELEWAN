@@ -167,8 +167,11 @@ class AsyncWavespeedAPI:
                     result = await response.json()
                     logger.info(f"✅ Prompt optimization request submitted successfully: {result}")
 
-                    # Extract the task ID from the response
-                    task_id = result.get("id") or result.get("request_id") or result.get("task_id")
+                    # Extract the task ID from the response (can be nested in data)
+                    task_id = (result.get("data", {}).get("id") or
+                              result.get("id") or
+                              result.get("request_id") or
+                              result.get("task_id"))
                     if not task_id:
                         logger.error(f"❌ No task ID found in response: {result}")
                         raise ValueError("No task ID in prompt optimization response")
