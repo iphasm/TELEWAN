@@ -117,7 +117,13 @@
                 <i data-lucide="sparkles" class="w-14 h-14 text-purple-400"></i>
             </h1>
             <p class="text-xl text-gray-300 mb-4 font-light">Tecnología de IA Premium para la Creación de Video</p>
-            <p class="text-sm text-gray-400 uppercase tracking-widest font-semibold">Transforma • Innova • Crea</p>
+            <p class="text-sm text-gray-400 uppercase tracking-widest font-semibold mb-6">Transforma • Innova • Crea</p>
+
+            <!-- Usage Indicator -->
+            <div id="usageIndicator" class="inline-flex items-center gap-3 bg-gray-800/60 backdrop-blur-sm rounded-full px-6 py-3 border border-gray-600/50">
+                <i data-lucide="bar-chart-3" class="w-5 h-5 text-blue-400"></i>
+                <span id="usageText" class="text-gray-300 text-sm font-medium">Verificando uso diario...</span>
+            </div>
         </div>
     </header>
 
@@ -610,11 +616,16 @@
                     body: formData
                 });
 
+                const result = await response.json();
+
                 if (!response.ok) {
+                    // Handle rate limit errors
+                    if (result.error === "Límite diario excedido") {
+                        showRateLimitError(result);
+                        return;
+                    }
                     throw new Error(`Error ${response.status}: ${response.statusText}`);
                 }
-
-                const result = await response.json();
                 currentTaskId = result.task_id;
 
                 // Poll for status
@@ -677,6 +688,9 @@
             generateText.classList.remove('hidden');
             generatingText.classList.add('hidden');
             generateBtn.disabled = false;
+
+            // Refresh usage info after successful generation
+            loadUsageInfo();
         }
 
         function showError(message) {
@@ -689,6 +703,25 @@
             generateText.classList.remove('hidden');
             generatingText.classList.add('hidden');
             generateBtn.disabled = false;
+        }
+
+        function showRateLimitError(data) {
+            progressSection.classList.add('hidden');
+            resultSection.classList.add('hidden');
+            errorSection.classList.remove('hidden');
+
+            errorText.innerHTML = `
+                <div class="text-center">
+                    <p class="text-lg font-semibold mb-2">${data.error}</p>
+                    <p class="mb-4">${data.message}</p>
+                    <p class="text-sm text-gray-400">Reseteo diario: ${data.reset_time}</p>
+                    <p class="text-sm text-purple-300 mt-3">${data.upgrade_message}</p>
+                </div>
+            `;
+
+            generateText.classList.remove('hidden');
+            generatingText.classList.add('hidden');
+            generateBtn.disabled = true; // Disable button when limit exceeded
         }
 
         // Download video
@@ -724,8 +757,33 @@
             errorSection.classList.add('hidden');
         });
 
+        // Load usage information on page load
+        async function loadUsageInfo() {
+            try {
+                const response = await fetch('/usage');
+                const data = await response.json();
+
+                const usageText = document.getElementById('usageText');
+                const usageIndicator = document.getElementById('usageIndicator');
+
+                if (data.allowed) {
+                    usageText.textContent = `${data.remaining_today} videos restantes hoy`;
+                    usageIndicator.classList.remove('bg-red-900/60', 'border-red-600/50');
+                    usageIndicator.classList.add('bg-gray-800/60', 'border-gray-600/50');
+                } else {
+                    usageText.textContent = `Límite alcanzado (${data.used_today}/${data.daily_limit})`;
+                    usageIndicator.classList.remove('bg-gray-800/60', 'border-gray-600/50');
+                    usageIndicator.classList.add('bg-red-900/60', 'border-red-600/50');
+                }
+            } catch (error) {
+                console.error('Error loading usage info:', error);
+                document.getElementById('usageText').textContent = 'Error al cargar información de uso';
+            }
+        }
+
         // Initialize
         updateGenerateButton();
+        loadUsageInfo();
     </script>
 </body>
 </html>

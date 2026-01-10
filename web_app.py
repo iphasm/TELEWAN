@@ -7,11 +7,12 @@ import uuid
 import asyncio
 import aiofiles
 import base64
+import json
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,6 +40,66 @@ app.add_middleware(
 # Global variables
 api_client = AsyncWavespeedAPI()
 tasks: Dict[str, Dict[str, Any]] = {}
+
+# Rate limiting configuration
+USAGE_FILE = Path("usage_data.json")
+DAILY_LIMIT = 5
+
+def load_usage_data() -> Dict[str, Any]:
+    """Load usage data from file"""
+    if USAGE_FILE.exists():
+        try:
+            with open(USAGE_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {"daily_usage": {}, "last_reset": str(date.today())}
+
+def save_usage_data(data: Dict[str, Any]):
+    """Save usage data to file"""
+    try:
+        with open(USAGE_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Error saving usage data: {e}")
+
+def reset_daily_usage_if_needed(usage_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Reset daily usage counters if it's a new day"""
+    today = str(date.today())
+    if usage_data.get("last_reset") != today:
+        usage_data["daily_usage"] = {}
+        usage_data["last_reset"] = today
+        save_usage_data(usage_data)
+    return usage_data
+
+def check_rate_limit(client_ip: str) -> tuple[bool, int, int]:
+    """
+    Check if client can generate more videos today
+    Returns: (allowed: bool, used: int, remaining: int)
+    """
+    usage_data = load_usage_data()
+    usage_data = reset_daily_usage_if_needed(usage_data)
+
+    daily_usage = usage_data["daily_usage"]
+    used_today = daily_usage.get(client_ip, 0)
+    remaining = max(0, DAILY_LIMIT - used_today)
+
+    return used_today < DAILY_LIMIT, used_today, remaining
+
+def increment_usage(client_ip: str) -> bool:
+    """Increment usage counter for client IP"""
+    try:
+        usage_data = load_usage_data()
+        usage_data = reset_daily_usage_if_needed(usage_data)
+
+        daily_usage = usage_data["daily_usage"]
+        daily_usage[client_ip] = daily_usage.get(client_ip, 0) + 1
+
+        save_usage_data(usage_data)
+        return True
+    except Exception as e:
+        print(f"Error incrementing usage: {e}")
+        return False
 
 # Ensure storage directory exists
 storage_dir = Path(Config.VOLUME_PATH)
@@ -73,12 +134,28 @@ async def generate_video(
     model: str = Form("ultra_fast"),
     auto_optimize: bool = Form(False),
     add_audio: bool = Form(False),
-    upscale_1080p: bool = Form(False)
+    upscale_1080p: bool = Form(False),
+    request: Request = None  # For getting client IP
 ):
     """
     Start video generation process
     """
     try:
+        # Get client IP for rate limiting
+        client_ip = request.client.host if request else "unknown"
+        print(f"🎯 Request from IP: {client_ip}")
+
+        # Check rate limit
+        allowed, used, remaining = check_rate_limit(client_ip)
+        if not allowed:
+            return {
+                "error": "Límite diario excedido",
+                "message": f"Has alcanzado el límite de {DAILY_LIMIT} videos por día. Usaste {used} hoy.",
+                "remaining": remaining,
+                "reset_time": "mañana a las 00:00",
+                "upgrade_message": "Actualiza a un plan premium para más videos diarios."
+            }
+
         # Validate inputs
         if model not in Config.AVAILABLE_MODELS:
             raise HTTPException(status_code=400, detail=f"Modelo no válido: {model}")
@@ -125,6 +202,9 @@ async def generate_video(
 
         print(f"🎯 Processing request: model={model}, has_image={image is not None}, image_url={image_url is not None}")
 
+        # Increment usage counter
+        increment_usage(client_ip)
+
         # Start background processing
         background_tasks.add_task(
             process_video_generation,
@@ -140,7 +220,9 @@ async def generate_video(
         return {
             "task_id": task_id,
             "status": "processing",
-            "message": "Video generation started"
+            "message": "Video generation started",
+            "usage_today": used + 1,
+            "remaining_today": remaining - 1
         }
 
     except HTTPException:
@@ -537,6 +619,22 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "version": "1.0.0"
+    }
+
+# Usage check endpoint
+@app.get("/usage")
+async def check_usage(request: Request = None):
+    """Check daily usage for client IP"""
+    client_ip = request.client.host if request else "unknown"
+    allowed, used, remaining = check_rate_limit(client_ip)
+
+    return {
+        "ip": client_ip,
+        "used_today": used,
+        "remaining_today": remaining,
+        "daily_limit": DAILY_LIMIT,
+        "allowed": allowed,
+        "reset_time": "mañana a las 00:00"
     }
 
 if __name__ == "__main__":

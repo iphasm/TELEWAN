@@ -43,6 +43,9 @@ logs/
 *.db
 *.sqlite3
 
+# Usage data
+usage_data.json
+
 # Temporary files
 *.tmp
 *.temp
