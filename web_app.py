@@ -14,13 +14,13 @@ from pathlib import Path
 
 # Translation imports
 try:
-    from googletrans import Translator
+    from deep_translator import GoogleTranslator
     from langdetect import detect, LangDetectError
     TRANSLATION_AVAILABLE = True
 except ImportError:
-    print("⚠️ Translation libraries not available. Install with: pip install googletrans langdetect")
+    print("⚠️ Translation libraries not available. Install with: pip install deep-translator langdetect")
     TRANSLATION_AVAILABLE = False
-    Translator = None
+    GoogleTranslator = None
     detect = None
     LangDetectError = Exception
 
@@ -161,8 +161,8 @@ def translate_to_english(text: str) -> tuple[str, bool]:
             return text, False
 
         if detected_lang == "es":  # Only translate from Spanish for now
-            translator = Translator()
-            translated = translator.translate(text, src="es", dest="en").text
+            translator = GoogleTranslator(source='es', target='en')
+            translated = translator.translate(text)
             print(f"🌐 Translated from Spanish: '{text[:50]}...' → '{translated[:50]}...'")
             return translated, True
 
