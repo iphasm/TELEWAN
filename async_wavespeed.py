@@ -187,6 +187,7 @@ class AsyncWavespeedAPI:
     async def get_prompt_optimizer_result(self, request_id: str) -> Dict[str, Any]:
         """
         Obtiene el resultado de una tarea de optimización de prompt (async)
+        Normaliza la respuesta para incluir 'optimized_prompt' directamente
         """
         endpoint = f"{self.base_url}/api/v3/predictions/{request_id}/result"
 
@@ -194,7 +195,31 @@ class AsyncWavespeedAPI:
             try:
                 async with session.get(endpoint) as response:
                     response.raise_for_status()
-                    return await response.json()
+                    raw_result = await response.json()
+                    
+                    # Log raw response for debugging
+                    print(f"📋 Raw optimizer result: {raw_result}")
+                    
+                    # Extract data from response (API wraps in 'data' object)
+                    data = raw_result.get("data", raw_result)
+                    
+                    # Normalize the response
+                    normalized = {
+                        "status": data.get("status"),
+                        "raw_response": raw_result
+                    }
+                    
+                    # Extract optimized prompt from outputs array (like other APIs)
+                    if data.get("outputs") and len(data["outputs"]) > 0:
+                        normalized["optimized_prompt"] = data["outputs"][0]
+                        print(f"✅ Found optimized prompt in outputs: '{normalized['optimized_prompt'][:50]}...'")
+                    elif data.get("result"):
+                        # Alternative field name
+                        normalized["optimized_prompt"] = data["result"]
+                        print(f"✅ Found optimized prompt in result: '{normalized['optimized_prompt'][:50]}...'")
+                    
+                    return normalized
+                    
             except aiohttp.ClientError as e:
                 logger.error(f"❌ Error obteniendo resultado del prompt optimizer: {e}")
                 raise
