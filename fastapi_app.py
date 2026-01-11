@@ -480,7 +480,8 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
         telegram_app = app_state.get("telegram_app")
         if telegram_app:
             logger.info(f"✅ Enviando update {update_id} a procesamiento")
-            logger.info("🔍 Detalles del update a procesar:"            logger.info(f"   Update ID: {update_id}")
+            logger.info("🔍 Detalles del update a procesar:")
+            logger.info(f"   Update ID: {update_id}")
             logger.info(f"   Message: {text}")
             logger.info(f"   User ID: {user_id}")
             background_tasks.add_task(process_telegram_update, update_data)
@@ -916,11 +917,12 @@ async def diagnose_text():
                             if not expected_url.endswith('/webhook'):
                                 expected_url += '/webhook'
                             url_ok = current_url == expected_url
-                            lines.append(f"   Configurado: ✅"                            lines.append(f"   URL correcta: {'✅' if url_ok else '❌'}")
+                            lines.append(f"   Configurado: ✅")
+                            lines.append(f"   URL correcta: {'✅' if url_ok else '❌'}")
                             if pending > 0:
                                 lines.append(f"   Mensajes pendientes: ⚠️ ({pending})")
                         else:
-                            lines.append("   Configurado: ❌"
+                            lines.append("   Configurado: ❌")
             except Exception as e:
                 lines.append(f"   Error: ❌ ({str(e)})")
         else:
