@@ -3,14 +3,34 @@ FastAPI Application for Event-Driven Architecture
 Reemplaza Flask con FastAPI para arquitectura ASGI async
 """
 import os
+import uuid
+import asyncio
+import aiofiles
+import base64
+import json
 import logging
-from datetime import datetime
+from datetime import datetime, date
 from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional
+from pathlib import Path
 
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Form, File, UploadFile
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 import uvicorn
+
+# Translation imports
+try:
+    from deep_translator import GoogleTranslator
+    from langdetect import detect
+    TRANSLATION_AVAILABLE = True
+    # Define exception for langdetect errors (langdetect doesn't export LangDetectError in some versions)
+    LangDetectError = Exception
+except ImportError as e:
+    print(f"⚠️ Translation libraries import failed: {e}. Install with: pip install deep-translator langdetect")
+    TRANSLATION_AVAILABLE = False
+    GoogleTranslator = None
+    detect = None
+    LangDetectError = Exception
 
 # Imports de Telegram al inicio para evitar errores de scope
 from telegram import Update
@@ -34,6 +54,152 @@ async def shutdown_event_handlers(): pass
 
 # Configurar logging
 logger = logging.getLogger(__name__)
+
+# Funciones de utilidad (migradas de web_app.py)
+def generate_fingerprint(client_ip: str, user_agent: str = "", fingerprint_data: Dict[str, Any] = None) -> str:
+    """Generate a unique fingerprint for the user"""
+    import hashlib
+
+    # Create fingerprint from available data
+    fingerprint_parts = [client_ip]
+
+    if user_agent:
+        fingerprint_parts.append(user_agent[:50])  # First 50 chars of user agent
+
+    if fingerprint_data:
+        # Add browser fingerprint data if available
+        for key in ['canvas', 'webgl', 'screen', 'timezone']:
+            if key in fingerprint_data:
+                fingerprint_parts.append(str(fingerprint_data[key]))
+
+    # Create hash
+    fingerprint_string = "|".join(fingerprint_parts)
+    return hashlib.sha256(fingerprint_string.encode()).hexdigest()[:16]
+
+def associate_fingerprint_with_ip(usage_data: Dict[str, Any], client_ip: str, fingerprint: str):
+    """Associate a fingerprint with an IP address for tracking"""
+    ip_fingerprints = usage_data.setdefault("ip_fingerprints", {})
+    if client_ip not in ip_fingerprints:
+        ip_fingerprints[client_ip] = []
+
+    if fingerprint not in ip_fingerprints[client_ip]:
+        ip_fingerprints[client_ip].append(fingerprint)
+
+def is_suspicious_user(usage_data: Dict[str, Any], fingerprint: str) -> bool:
+    """Check if user is flagged as suspicious"""
+    suspicious_users = usage_data.get("suspicious_users", {})
+    return fingerprint in suspicious_users
+
+def flag_suspicious_user(usage_data: Dict[str, Any], fingerprint: str, reason: str):
+    """Flag a user as suspicious"""
+    suspicious_users = usage_data.setdefault("suspicious_users", {})
+    suspicious_users[fingerprint] = {
+        "flagged_at": datetime.now().isoformat(),
+        "reason": reason
+    }
+    save_usage_data(usage_data)
+
+def detect_language(text: str) -> str:
+    """Detect the language of the given text"""
+    if not TRANSLATION_AVAILABLE:
+        return "en"  # Default to English if translation not available
+
+    try:
+        detected = detect(text)
+        logger.info(f"🌐 Language detected: {detected}")
+        return detected
+    except (LangDetectError, Exception) as e:
+        logger.warning(f"⚠️ Language detection failed: {e}, defaulting to English")
+        return "en"
+
+def translate_to_english(text: str) -> tuple[str, bool]:
+    """Translate text to English if not already in English"""
+    if not TRANSLATION_AVAILABLE:
+        return text, False
+
+    try:
+        detected_lang = detect_language(text)
+        if detected_lang == "en":
+            logger.info("🌐 Text already in English")
+            return text, False
+
+        logger.info(f"🌐 Translating from {detected_lang} to English")
+        translator = GoogleTranslator(source=detected_lang, target="en")
+        translated = translator.translate(text)
+
+        logger.info(f"🌐 Translation: '{text[:50]}...' → '{translated[:50]}...'")
+        return translated, True
+
+    except Exception as e:
+        logger.error(f"❌ Translation failed: {e}")
+        return text, False
+
+def load_usage_data() -> Dict[str, Any]:
+    """Load usage data from file"""
+    try:
+        with open("usage_data.json", "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"daily_usage": {}, "ip_fingerprints": {}, "suspicious_users": {}}
+    except Exception as e:
+        logger.error(f"Error loading usage data: {e}")
+        return {"daily_usage": {}, "ip_fingerprints": {}, "suspicious_users": {}}
+
+def save_usage_data(data: Dict[str, Any]):
+    """Save usage data to file"""
+    try:
+        with open("usage_data.json", "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving usage data: {e}")
+
+def check_rate_limit_advanced(client_ip: str, fingerprint: str, user_agent: str = "") -> tuple[bool, int, int, bool]:
+    """Advanced rate limiting with fingerprinting and VPN detection"""
+    usage_data = load_usage_data()
+    today = date.today().isoformat()
+
+    # Initialize today's data
+    if today not in usage_data["daily_usage"]:
+        usage_data["daily_usage"][today] = {}
+
+    today_usage = usage_data["daily_usage"][today]
+
+    # Associate fingerprint with IP
+    associate_fingerprint_with_ip(usage_data, client_ip, fingerprint)
+
+    # Check for suspicious activity
+    ip_fingerprints = usage_data.get("ip_fingerprints", {}).get(client_ip, [])
+    is_vpn_suspicious = len(ip_fingerprints) > 3  # More than 3 fingerprints from same IP
+
+    # Check usage for this fingerprint
+    fingerprint_usage = today_usage.get(fingerprint, 0)
+
+    # Allow 5 videos per day per fingerprint
+    limit = 5
+    remaining = max(0, limit - fingerprint_usage)
+
+    # Apply rate limit
+    if fingerprint_usage >= limit:
+        logger.warning(f"🚫 Rate limit exceeded for fingerprint {fingerprint[:8]}...: {fingerprint_usage}/{limit}")
+        return False, remaining, fingerprint_usage, is_vpn_suspicious
+
+    # Check for suspicious patterns
+    if is_vpn_suspicious and not is_suspicious_user(usage_data, fingerprint):
+        logger.warning(f"🚨 Suspicious activity detected: IP {client_ip} has {len(ip_fingerprints)} fingerprints")
+        flag_suspicious_user(usage_data, fingerprint, f"Multiple fingerprints from IP: {len(ip_fingerprints)}")
+
+    return True, remaining, fingerprint_usage, is_vpn_suspicious
+
+def increment_usage_advanced(fingerprint: str):
+    """Increment usage counter for a fingerprint"""
+    usage_data = load_usage_data()
+    today = date.today().isoformat()
+
+    if today not in usage_data["daily_usage"]:
+        usage_data["daily_usage"][today] = {}
+
+    usage_data["daily_usage"][today][fingerprint] = usage_data["daily_usage"][today].get(fingerprint, 0) + 1
+    save_usage_data(usage_data)
 
 async def setup_webhook(telegram_app):
     """Configurar webhook en Telegram"""
@@ -64,6 +230,9 @@ app_state = {
     "start_time": datetime.now(),
     "processed_updates": 0
 }
+
+# Gestión de tareas de video (migrado de web_app.py)
+tasks: Dict[str, Dict[str, Any]] = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -414,6 +583,292 @@ async def debug_info():
             "config_error": app_state.get("error"),
             "telegram_error": app_state.get("telegram_error")
         }
+    }
+
+# Función de procesamiento de video (migrada de web_app.py)
+async def process_video_generation(task_id: str):
+    """Process video generation in background"""
+    try:
+        task = tasks[task_id]
+        logger.info(f"🎬 Starting video generation for task {task_id}")
+
+        # Import async functions
+        from async_wavespeed import generate_video, add_audio_to_video, upscale_video_to_1080p
+
+        # Step 1: Generate base video
+        logger.info("🎬 Generating base video...")
+        result = await generate_video(
+            prompt=task["final_prompt"],
+            model=task["model"],
+            image_url=task.get("image_url")
+        )
+
+        if not result or "video_url" not in result:
+            raise Exception(f"Video generation failed: {result}")
+
+        video_url = result["video_url"]
+        logger.info(f"✅ Base video generated: {video_url}")
+
+        # Step 2: Add audio if requested
+        if task.get("add_audio"):
+            logger.info("🎵 Adding audio to video...")
+            audio_result = await add_audio_to_video(video_url, task["final_prompt"])
+
+            if audio_result and "video_url" in audio_result:
+                video_url = audio_result["video_url"]
+                logger.info(f"✅ Audio added: {video_url}")
+            else:
+                logger.warning(f"⚠️ Audio addition failed: {audio_result}")
+
+        # Step 3: Upscale to 1080p if requested
+        if task.get("upscale_1080p"):
+            logger.info("📈 Upscaling video to 1080p...")
+            upscale_result = await upscale_video_to_1080p(video_url)
+
+            if upscale_result and "video_url" in upscale_result:
+                video_url = upscale_result["video_url"]
+                logger.info(f"✅ Video upscaled: {video_url}")
+            else:
+                logger.warning(f"⚠️ Upscaling failed: {upscale_result}")
+
+        # Update task as completed
+        task["status"] = "completed"
+        task["video_url"] = video_url
+        task["completed_at"] = datetime.now().isoformat()
+
+        logger.info(f"🎉 Task {task_id} completed successfully")
+
+    except Exception as e:
+        logger.error(f"❌ Task {task_id} failed: {e}")
+        task = tasks.get(task_id)
+        if task:
+            task["status"] = "failed"
+            task["error"] = str(e)
+
+# Endpoints del frontend (migrados de web_app.py)
+
+@app.get("/", response_class=HTMLResponse, tags=["Frontend"])
+async def root():
+    """Serve the main web interface"""
+    try:
+        with open("index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="index.html not found")
+
+@app.post("/generate", tags=["Video Generation"])
+async def generate_video(
+    background_tasks: BackgroundTasks,
+    image: Optional[UploadFile] = File(None),
+    prompt: str = Form(...),
+    model: str = Form("ultra_fast"),
+    auto_optimize: bool = Form(False),
+    add_audio: bool = Form(False),
+    upscale_1080p: bool = Form(False),
+    fingerprint: str = Form(""),  # Browser fingerprint
+    request: Request = None  # For getting client IP
+):
+    """
+    Start video generation process
+    """
+    try:
+        # Get client IP and user agent for advanced rate limiting
+        client_ip = request.client.host if request else "unknown"
+        user_agent = request.headers.get("user-agent", "") if request else ""
+
+        # Generate or use provided fingerprint
+        if not fingerprint:
+            fingerprint = generate_fingerprint(client_ip, user_agent)
+
+        logger.info(f"🎯 Request from IP: {client_ip}, Fingerprint: {fingerprint[:16]}...")
+
+        # Check rate limit
+        allowed, remaining, used, is_vpn_suspicious = check_rate_limit_advanced(client_ip, fingerprint, user_agent)
+        if not allowed:
+            return {
+                "error": f"Rate limit exceeded. Used {used}/5 videos today. Try again tomorrow.",
+                "remaining": remaining,
+                "is_vpn_suspicious": is_vpn_suspicious
+            }
+
+        # Validate inputs
+        if not prompt.strip():
+            return {"error": "Prompt cannot be empty"}
+
+        if model not in Config.AVAILABLE_MODELS:
+            return {"error": f"Invalid model. Available: {list(Config.AVAILABLE_MODELS.keys())}"}
+
+        # Handle image upload
+        image_url = None
+        if image:
+            # Save uploaded image
+            image_filename = f"input_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.jpg"
+            image_path = Path(Config.VOLUME_PATH) / image_filename
+
+            # Ensure storage directory exists
+            image_path.parent.mkdir(exist_ok=True)
+
+            # Save image
+            async with aiofiles.open(image_path, 'wb') as f:
+                content = await image.read()
+                await f.write(content)
+
+            # Create URL for the image
+            image_url = f"/images/{image_filename}"
+            logger.info(f"🖼️ Image saved: {image_path}")
+
+        # Process prompt
+        original_prompt = prompt
+        translated_prompt = None
+        optimized_prompt = None
+
+        # Detect language and translate if needed
+        detected_lang = detect_language(prompt)
+        if detected_lang != "en":
+            translated_prompt, was_translated = translate_to_english(prompt)
+            if was_translated:
+                prompt = translated_prompt
+                logger.info(f"🌐 Translated prompt: {prompt[:100]}...")
+
+        # Optimize prompt if requested
+        if auto_optimize:
+            try:
+                logger.info("🤖 Optimizing prompt...")
+                from async_wavespeed import optimize_prompt_v3
+
+                if image_url:
+                    # Image-to-video with optimization
+                    result = await optimize_prompt_v3(prompt, image_url)
+                else:
+                    # Text-to-video with optimization
+                    result = await optimize_prompt_v3(prompt)
+
+                if result and "optimized_prompt" in result:
+                    optimized_prompt = result["optimized_prompt"]
+                    logger.info(f"✅ Prompt optimized: {optimized_prompt[:100]}...")
+                else:
+                    logger.warning("⚠️ Prompt optimization failed")
+
+            except Exception as e:
+                logger.error(f"❌ Prompt optimization error: {e}")
+
+        # Use optimized prompt if available, otherwise translated or original
+        final_prompt = optimized_prompt or translated_prompt or original_prompt
+
+        # Create task
+        task_id = str(uuid.uuid4())
+        task = {
+            "id": task_id,
+            "status": "processing",
+            "original_prompt": original_prompt,
+            "translated_prompt": translated_prompt,
+            "optimized_prompt": optimized_prompt,
+            "final_prompt": final_prompt,
+            "model": model,
+            "image_url": image_url,
+            "add_audio": add_audio,
+            "upscale_1080p": upscale_1080p,
+            "created_at": datetime.now().isoformat(),
+            "client_ip": client_ip,
+            "fingerprint": fingerprint,
+            "user_agent": user_agent
+        }
+
+        tasks[task_id] = task
+        logger.info(f"📋 Task created: {task_id}")
+
+        # Start background processing
+        background_tasks.add_task(process_video_generation, task_id)
+
+        # Increment usage counter
+        increment_usage_advanced(fingerprint)
+
+        return {
+            "task_id": task_id,
+            "status": "processing",
+            "message": "Video generation started",
+            "remaining_today": remaining - 1  # Already used one
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error in generate_video: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+
+@app.get("/status/{task_id}", tags=["Video Generation"])
+async def get_task_status(task_id: str):
+    """
+    Get the status of a video generation task
+    """
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task = tasks[task_id]
+
+    # If completed, return final result
+    if task["status"] == "completed":
+        return {
+            "status": "completed",
+            "video_url": task["video_url"],
+            "prompt_used": task["optimized_prompt"] or task["translated_prompt"] or task["original_prompt"],
+            "model": task["model"],
+            "was_optimized": bool(task.get("optimized_prompt"))
+        }
+    elif task["status"] == "failed":
+        return {
+            "status": "failed",
+            "error": task["error"]
+        }
+    else:
+        # Still processing
+        return {
+            "status": "processing",
+            "message": "Video is being generated...",
+            "progress": "Processing with AI model"
+        }
+
+@app.get("/videos/{filename}", tags=["Static Files"])
+async def get_video(filename: str):
+    """Serve generated video files"""
+    video_path = Path(Config.VOLUME_PATH) / filename
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    return FileResponse(
+        path=video_path,
+        media_type="video/mp4",
+        filename=filename
+    )
+
+@app.get("/images/{filename}", tags=["Static Files"])
+async def get_image(filename: str):
+    """Serve uploaded image files"""
+    image_path = Path(Config.VOLUME_PATH) / filename
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    return FileResponse(
+        path=image_path,
+        media_type="image/jpeg",
+        filename=filename
+    )
+
+@app.get("/usage", tags=["Monitoring"])
+async def get_usage_stats():
+    """Get usage statistics"""
+    usage_data = load_usage_data()
+    today = date.today().isoformat()
+
+    today_usage = usage_data.get("daily_usage", {}).get(today, {})
+    total_today = sum(today_usage.values())
+
+    return {
+        "total_videos_today": total_today,
+        "remaining_limit": max(0, 5 - total_today),  # 5 videos per day limit
+        "daily_usage": today_usage,
+        "suspicious_users": len(usage_data.get("suspicious_users", {})),
+        "timestamp": datetime.now().isoformat()
     }
 
 # Removidos @app.on_event deprecados - usando lifespan en su lugar
