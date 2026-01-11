@@ -119,13 +119,16 @@ async def lifespan(app: FastAPI):
 
             # Configurar webhook si está habilitado
             if Config.USE_WEBHOOK:
-                # Si estamos en Railway pero no hay WEBHOOK_URL, intentar inferirla
-                if not Config.WEBHOOK_URL and os.getenv('RAILWAY_ENVIRONMENT'):
-                    # Intentar inferir la URL de Railway
-                    railway_url = f"https://{os.getenv('RAILWAY_PROJECT_ID', 'unknown')}.up.railway.app"
-                    logger.info(f"🔄 Inferiendo WEBHOOK_URL de Railway: {railway_url}")
-                    # Configurar temporalmente para este contexto
-                    Config.WEBHOOK_URL = railway_url
+                # Verificar que WEBHOOK_URL esté configurada
+                if not Config.WEBHOOK_URL:
+                    if os.getenv('RAILWAY_ENVIRONMENT'):
+                        logger.error("❌ WEBHOOK_URL no configurada - REQUERIDA para Railway")
+                        logger.error("💡 Configurar en Railway Dashboard > Variables > WEBHOOK_URL")
+                        logger.error("💡 Formato esperado: https://tu-proyecto.up.railway.app")
+                        logger.error("💡 El nombre del proyecto se encuentra en la URL de Railway")
+                        raise ValueError("WEBHOOK_URL requerida para Railway pero no configurada")
+                    else:
+                        logger.warning("⚠️  WEBHOOK_URL no configurada - usando modo local sin webhook")
 
                 if Config.WEBHOOK_URL:
                     try:
