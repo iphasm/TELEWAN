@@ -353,27 +353,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-@app.get("/", tags=["Health"])
-async def root():
-    """Endpoint de healthcheck básico - siempre responde"""
-    try:
-        # Respuesta básica que siempre funciona
-        return {
-            "status": "ok",
-            "service": "TELEWAN Bot API",
-            "version": "2.0.0",
-            "timestamp": datetime.now().isoformat(),
-            "uptime_seconds": (datetime.now() - app_state["start_time"]).total_seconds(),
-            "processed_updates": app_state.get("processed_updates", 0)
-        }
-    except Exception as e:
-        # Fallback si algo falla
-        return {
-            "status": "error",
-            "service": "TELEWAN Bot API",
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
+# Endpoint raíz duplicado eliminado - causa conflicto con endpoint que sirve HTML
 
 @app.get("/health", tags=["Health"])
 async def health_check():
