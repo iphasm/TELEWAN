@@ -1,4 +1,4 @@
-# 🛡️ Sistema Anti-VPN - SynthClip
+El # 🛡️ Sistema Anti-VPN - SynthClip
 
 ## 🎯 Visión General
 

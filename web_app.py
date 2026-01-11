@@ -1,6 +1,7 @@
 """
-SynthClip Web Application
-FastAPI backend for the SynthClip video generation web interface
+SynthClip Web Application + TELEWAN Bot
+FastAPI backend for the SynthClip video generation web interface AND Telegram bot
+Unified service that handles both web UI and Telegram webhooks
 """
 import os
 import uuid
@@ -8,6 +9,7 @@ import asyncio
 import aiofiles
 import base64
 import json
+import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, date
 from pathlib import Path
@@ -26,21 +28,56 @@ except ImportError as e:
     detect = None
     LangDetectError = Exception
 
+# Telegram imports for bot integration
+try:
+    from telegram import Update
+    from telegram.ext import Application, CommandHandler, MessageHandler, filters
+    TELEGRAM_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Telegram libraries import failed: {e}")
+    TELEGRAM_AVAILABLE = False
+    Update = None
+    Application = None
+
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks, Request
 from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from async_wavespeed import AsyncWavespeedAPI
 from config import Config
 
+# Import bot handlers
+try:
+    from bot import (
+        start, help_command, list_models_command, handle_text_video,
+        handle_quality_video, handle_preview_video, handle_optimize, 
+        handle_lastvideo, handle_balance, handle_debug_files, handle_download, 
+        handle_social_url, handle_photo, handle_document_image, handle_sticker_image,
+        image_document_filter, static_sticker_filter
+    )
+    BOT_HANDLERS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Bot handlers import failed: {e}")
+    BOT_HANDLERS_AVAILABLE = False
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
 # FastAPI app will be created later with lifespan
 
 # Global variables
 api_client = AsyncWavespeedAPI()
 tasks: Dict[str, Dict[str, Any]] = {}
+
+# Telegram bot app state (for unified service)
+telegram_app_state = {
+    "telegram_app": None,
+    "processed_updates": 0,
+    "start_time": datetime.now()
+}
 
 # Rate limiting configuration
 USAGE_FILE = Path("usage_data.json")
@@ -231,26 +268,111 @@ storage_dir.mkdir(exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan context manager for FastAPI application"""
+    """Lifespan context manager for FastAPI application - Unified Web + Bot"""
+    logger.info("🚀 Starting unified SynthClip Web + TELEWAN Bot service")
+    
+    # Validate configuration
     try:
         Config.validate()
-        print("✅ SynthClip Web App initialized successfully")
-        print(f"📁 Storage directory: {storage_dir.absolute()}")
-        print(f"🎬 Using Wavespeed API: {Config.WAVESPEED_BASE_URL}")
+        logger.info("✅ Configuration validated successfully")
+        logger.info(f"📁 Storage directory: {storage_dir.absolute()}")
+        logger.info(f"🎬 Using Wavespeed API: {Config.WAVESPEED_BASE_URL}")
     except ValueError as e:
-        print(f"❌ Configuration error: {e}")
+        logger.error(f"❌ Configuration error: {e}")
         raise
 
+    # Initialize Telegram bot if available
+    if TELEGRAM_AVAILABLE and BOT_HANDLERS_AVAILABLE:
+        try:
+            logger.info("🤖 Initializing Telegram bot...")
+            
+            # Create Telegram application
+            telegram_app = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
+            
+            # Add command handlers
+            telegram_app.add_handler(CommandHandler("start", start))
+            telegram_app.add_handler(CommandHandler("help", help_command))
+            telegram_app.add_handler(CommandHandler("models", list_models_command))
+            telegram_app.add_handler(CommandHandler("textvideo", handle_text_video))
+            telegram_app.add_handler(CommandHandler("quality", handle_quality_video))
+            telegram_app.add_handler(CommandHandler("preview", handle_preview_video))
+            telegram_app.add_handler(CommandHandler("optimize", handle_optimize))
+            telegram_app.add_handler(CommandHandler("lastvideo", handle_lastvideo))
+            telegram_app.add_handler(CommandHandler("balance", handle_balance))
+            telegram_app.add_handler(CommandHandler("debugfiles", handle_debug_files))
+            telegram_app.add_handler(CommandHandler("download", handle_download))
+            
+            # Handler for social URLs (auto-detect)
+            telegram_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_social_url))
+            
+            # Add message handlers (photos, documents, stickers)
+            telegram_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+            telegram_app.add_handler(MessageHandler(image_document_filter, handle_document_image))
+            telegram_app.add_handler(MessageHandler(static_sticker_filter, handle_sticker_image))
+            
+            # Initialize the Telegram application
+            await telegram_app.initialize()
+            logger.info("✅ Telegram Application initialized")
+            
+            # Store in app state
+            telegram_app_state["telegram_app"] = telegram_app
+            telegram_app_state["start_time"] = datetime.now()
+            
+            # Configure webhook if USE_WEBHOOK is enabled
+            if Config.USE_WEBHOOK and Config.WEBHOOK_URL:
+                webhook_base_url = Config.WEBHOOK_URL
+                if not webhook_base_url.startswith('http'):
+                    webhook_base_url = f"https://{webhook_base_url}"
+                
+                webhook_url = f"{webhook_base_url}{Config.WEBHOOK_PATH}"
+                logger.info(f"🔗 Setting webhook URL: {webhook_url}")
+                
+                try:
+                    await telegram_app.bot.set_webhook(
+                        url=webhook_url,
+                        secret_token=os.getenv('WEBHOOK_SECRET_TOKEN')
+                    )
+                    logger.info("✅ Telegram webhook configured successfully")
+                except Exception as webhook_error:
+                    logger.error(f"❌ Error setting webhook: {webhook_error}")
+                    raise
+            else:
+                logger.warning("⚠️ Webhook not configured - set WEBHOOK_URL and USE_WEBHOOK=true")
+            
+            logger.info("🤖 TELEWAN Bot initialized and ready!")
+            
+        except Exception as e:
+            logger.error(f"❌ Error initializing Telegram bot: {e}")
+            telegram_app_state["telegram_error"] = str(e)
+    else:
+        logger.warning("⚠️ Telegram bot not available - running in web-only mode")
+        if not TELEGRAM_AVAILABLE:
+            logger.warning("   - Telegram library not installed")
+        if not BOT_HANDLERS_AVAILABLE:
+            logger.warning("   - Bot handlers not importable")
+
+    logger.info("✅ Unified SynthClip + TELEWAN service ready!")
+    
     yield
 
-    # Cleanup (if needed)
-    pass
+    # Cleanup on shutdown
+    logger.info("🛑 Shutting down unified service...")
+    
+    # Shutdown Telegram bot
+    if telegram_app_state.get("telegram_app"):
+        try:
+            await telegram_app_state["telegram_app"].shutdown()
+            logger.info("✅ Telegram bot shutdown complete")
+        except Exception as e:
+            logger.error(f"❌ Error during Telegram shutdown: {e}")
+
+
 
 # Create FastAPI app with lifespan
 app = FastAPI(
-    title="SynthClip API",
-    description="API for SynthClip video generation with AI",
-    version="1.0.0",
+    title="SynthClip + TELEWAN Bot API",
+    description="Unified API for SynthClip video generation web interface AND TELEWAN Telegram bot",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -818,12 +940,126 @@ async def get_image(filename: str):
 # Health check endpoint
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    return {
+    """Health check endpoint - includes bot status"""
+    # Basic health info
+    health_info = {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "1.0.0"
+        "version": "2.0.0",
+        "service": "SynthClip + TELEWAN Bot (Unified)"
     }
+    
+    # Add bot status
+    if telegram_app_state.get("telegram_app"):
+        health_info["telegram_bot"] = "operational"
+        health_info["processed_updates"] = telegram_app_state.get("processed_updates", 0)
+    elif telegram_app_state.get("telegram_error"):
+        health_info["telegram_bot"] = "error"
+        health_info["telegram_error"] = telegram_app_state.get("telegram_error")
+    else:
+        health_info["telegram_bot"] = "not_initialized"
+    
+    return health_info
+
+# ============================================================================
+# TELEGRAM WEBHOOK ENDPOINTS
+# ============================================================================
+
+@app.post("/webhook")
+async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
+    """
+    Webhook endpoint to receive Telegram updates
+    This is called by Telegram when there are new messages
+    """
+    try:
+        # Log request for debugging
+        logger.info("🔗 Telegram webhook request received")
+        
+        # Verify secret token if configured
+        secret_token = os.getenv('WEBHOOK_SECRET_TOKEN')
+        if secret_token:
+            received_token = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
+            if received_token != secret_token:
+                logger.warning("❌ Invalid webhook token")
+                raise HTTPException(status_code=401, detail="Invalid webhook token")
+        
+        # Get update data
+        update_data = await request.json()
+        update_id = update_data.get('update_id', 'unknown')
+        
+        # Log update info
+        message = update_data.get('message', {})
+        text = message.get('text', '[no text]') if message else '[no message]'
+        from_user = message.get('from', {}) if message else {}
+        user_id = from_user.get('id', 'unknown')
+        
+        logger.info(f"📨 Webhook received: update_id={update_id}, text='{text[:30]}...', user={user_id}")
+        
+        # Increment counter
+        telegram_app_state["processed_updates"] = telegram_app_state.get("processed_updates", 0) + 1
+        
+        # Process update in background
+        telegram_app = telegram_app_state.get("telegram_app")
+        if telegram_app:
+            logger.info(f"✅ Sending update {update_id} for processing")
+            background_tasks.add_task(process_telegram_update, update_data)
+        else:
+            logger.error("❌ Telegram app not initialized - cannot process update")
+            raise HTTPException(status_code=503, detail="Telegram bot not ready")
+        
+        return {"status": "accepted", "update_id": update_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error processing webhook: {e}")
+        import traceback
+        logger.error(f"   Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/webhook")
+async def telegram_webhook_get():
+    """
+    GET endpoint for webhook verification
+    Telegram sometimes makes GET requests to verify the webhook
+    """
+    logger.info("🔗 Telegram webhook GET request (verification)")
+    return {"status": "webhook_endpoint_active", "service": "TELEWAN Bot"}
+
+async def process_telegram_update(update_data: Dict[str, Any]):
+    """
+    Process a Telegram update asynchronously
+    """
+    try:
+        update_id = update_data.get('update_id')
+        logger.info(f"🔄 Processing update {update_id}...")
+        
+        # Verify Telegram app is available
+        telegram_app = telegram_app_state.get("telegram_app")
+        if not telegram_app:
+            logger.error(f"❌ Telegram app not available for update {update_id}")
+            return
+        
+        # Create Update object from data
+        update = Update.de_json(update_data, telegram_app.bot)
+        
+        # Log update type for debugging
+        if update.message:
+            if update.message.photo:
+                logger.info(f"   Type: Photo message")
+            elif update.message.document:
+                logger.info(f"   Type: Document ({update.message.document.mime_type})")
+            elif update.message.text:
+                logger.info(f"   Type: Text message")
+        
+        # Process the update with the bot
+        await telegram_app.process_update(update)
+        logger.info(f"✅ Update {update_id} processed successfully")
+        
+    except Exception as e:
+        logger.error(f"❌ Error processing update {update_data.get('update_id')}: {e}")
+        import traceback
+        logger.error(f"   Traceback: {traceback.format_exc()}")
 
 # Usage check endpoint
 @app.get("/usage")
@@ -850,7 +1086,9 @@ async def check_usage(request: Request = None):
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
-    print(f"🚀 Starting SynthClip Web App on port {port}")
+    print(f"🚀 Starting SynthClip + TELEWAN Bot (Unified) on port {port}")
+    print(f"🌐 Web UI: http://localhost:{port}/")
+    print(f"🤖 Telegram webhook: http://localhost:{port}/webhook")
     uvicorn.run(
         "web_app:app",
         host="0.0.0.0",
