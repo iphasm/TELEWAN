@@ -66,9 +66,22 @@ WEBHOOK_SECRET_TOKEN=tu_token_secreto_aqui
 # Directorio para almacenar archivos temporales
 VOLUME_PATH=./storage
 
+# ===== CONFIGURACIÓN DE PROCESAMIENTO ASÍNCRONO (MÁS EFICIENTE) =====
+
+# Activar procesamiento asíncrono inteligente (true/false)
+# Más eficiente que el polling continuo tradicional
+USE_ASYNC_PROCESSING=true
+
+# Número máximo de workers asíncronos para procesamiento paralelo
+MAX_ASYNC_WORKERS=3
+
+# Timeout para tareas asíncronas en segundos (5 minutos por defecto)
+ASYNC_TASK_TIMEOUT=300
+
 # ===== INSTRUCCIONES =====
 # 1. Copia este archivo como .env: cp env_example.txt .env
 # 2. Configura TELEGRAM_BOT_TOKEN y WAVESPEED_API_KEY
 # 3. Las demás variables son opcionales y tienen valores por defecto
 # 4. Para webhooks, configura USE_WEBHOOK=true y WEBHOOK_URL
+# 5. El procesamiento asíncrono está activado por defecto para mejor rendimiento
 

@@ -5,13 +5,15 @@ Verificación final del estado del bot después de las correcciones
 import os
 import asyncio
 
-# Simular las variables de entorno de Railway
-os.environ['ALLOWED_USER_ID'] =
-os.environ['TELEGRAM_BOT_TOKEN'] =
-os.environ['VOLUME_PATH'] = "/app/storage"
-os.environ['WAVESPEED_API_KEY'] = 
-os.environ['USE_WEBHOOK'] = "true"
-os.environ['WEBHOOK_URL'] = "telewan-production.up.railway.app"
+# NOTA: Este archivo requiere que las siguientes variables de entorno estén configuradas:
+# - TELEGRAM_BOT_TOKEN: Token del bot de Telegram
+# - WAVESPEED_API_KEY: API key de WaveSpeed AI
+# - ALLOWED_USER_ID: ID del usuario autorizado
+# - VOLUME_PATH: Ruta del volumen para archivos temporales
+# - USE_WEBHOOK: true/false para usar webhook
+# - WEBHOOK_URL: URL del webhook (solo si USE_WEBHOOK=true)
+
+# Las variables deben configurarse en Railway o en un archivo .env (no incluido en git)
 
 async def final_verification():
     """Verificación final completa del sistema"""

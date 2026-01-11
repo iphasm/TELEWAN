@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SynthClip - Generador de Videos con IA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 25%, #2a2a2a 50%, #1a1a1a 75%, #0f0f0f 100%);
+            min-height: 100vh;
+        }
+        .card-gradient {
+            background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 50%, rgba(0,0,0,0.1) 100%);
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(20px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1);
+        }
+        .upload-area {
+            border: 2px dashed rgba(255,255,255,0.3);
+            background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.2) 100%);
+            transition: all 0.4s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .upload-area::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(138, 43, 226, 0.1), transparent);
+            transition: left 0.5s;
+        }
+        .upload-area:hover::before, .upload-area.dragover::before {
+            left: 100%;
+        }
+        .upload-area:hover, .upload-area.dragover {
+            border-color: #8a2be2;
+            background: linear-gradient(135deg, rgba(138, 43, 226, 0.1) 0%, rgba(0,0,0,0.3) 100%);
+            transform: scale(1.02);
+            box-shadow: 0 0 30px rgba(138, 43, 226, 0.3);
+        }
+        .pulse-animation {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .fade-in {
+            animation: fadeIn 0.6s ease-out;
+        }
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+                filter: blur(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+                filter: blur(0);
+            }
+        }
+        .glow-text {
+            text-shadow: 0 0 20px rgba(138, 43, 226, 0.5);
+        }
+        .premium-button {
+            background: linear-gradient(135deg, #8a2be2 0%, #4c1d95 50%, #1e1b4b 100%);
+            box-shadow: 0 4px 15px rgba(138, 43, 226, 0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s ease;
+        }
+        .premium-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(138, 43, 226, 0.5);
+            background: linear-gradient(135deg, #9333ea 0%, #581c87 50%, #312e81 100%);
+        }
+        .input-premium {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            transition: all 0.3s ease;
+        }
+        .input-premium:focus {
+            border-color: #8a2be2;
+            box-shadow: 0 0 20px rgba(138, 43, 226, 0.3);
+            background: rgba(0,0,0,0.5);
+        }
+        .model-card {
+            background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.2) 100%);
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s ease;
+        }
+        .model-card:hover {
+            border-color: #8a2be2;
+            box-shadow: 0 0 20px rgba(138, 43, 226, 0.2);
+            transform: translateY(-2px);
+        }
+        .model-selected {
+            border-color: #8a2be2 !important;
+            box-shadow: 0 0 25px rgba(138, 43, 226, 0.4) !important;
+            background: linear-gradient(135deg, rgba(138, 43, 226, 0.1) 0%, rgba(0,0,0,0.3) 100%) !important;
+        }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen">
+    <!-- Header -->
+    <header class="container mx-auto px-4 py-12">
+        <div class="text-center">
+            <h1 class="text-6xl font-bold text-white mb-6 flex items-center justify-center gap-4 glow-text">
+                <i data-lucide="sparkles" class="w-14 h-14 text-purple-400"></i>
+                SynthClip
+                <i data-lucide="sparkles" class="w-14 h-14 text-purple-400"></i>
+            </h1>
+            <p class="text-xl text-gray-300 mb-4 font-light">Tecnología de IA Premium para la Creación de Video</p>
+            <p class="text-sm text-gray-400 uppercase tracking-widest font-semibold mb-6">Transforma • Innova • Crea</p>
+
+            <!-- Usage Indicator -->
+            <div id="usageIndicator" class="inline-flex items-center gap-3 bg-gray-800/60 backdrop-blur-sm rounded-full px-6 py-3 border border-gray-600/50">
+                <i data-lucide="bar-chart-3" class="w-5 h-5 text-blue-400"></i>
+                <span id="usageText" class="text-gray-300 text-sm font-medium">Verificando uso diario...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 pb-16">
+        <div class="max-w-4xl mx-auto">
+            <!-- Upload Card -->
+            <div class="card-gradient backdrop-blur-xl rounded-2xl p-8 mb-8 fade-in">
+                <h2 class="text-2xl font-semibold text-white mb-6 flex items-center gap-3">
+                    <i data-lucide="upload" class="w-6 h-6 text-purple-400"></i>
+                    Selecciona tu Imagen Premium
+                </h2>
+
+                <div id="uploadArea" class="upload-area rounded-xl p-12 text-center cursor-pointer">
+                    <div id="uploadContent">
+                        <i data-lucide="image" class="w-20 h-20 text-purple-400 mx-auto mb-6 drop-shadow-lg"></i>
+                        <p class="text-white text-xl mb-3 font-semibold">Arrastra tu imagen aquí</p>
+                        <p class="text-gray-400 text-sm mb-6">o haz clic para explorar archivos</p>
+                        <button class="premium-button text-white px-8 py-4 rounded-lg font-semibold transition-all duration-300">
+                            <i data-lucide="folder-open" class="w-5 h-5 inline mr-2"></i>
+                            Seleccionar Archivo
+                        </button>
+                        <p class="text-gray-500 text-xs mt-6 uppercase tracking-wide">Formatos: JPG, PNG, WebP • Máx. 10MB</p>
+                    </div>
+                    <div id="imagePreview" class="hidden">
+                        <img id="previewImg" class="max-w-full max-h-64 mx-auto rounded-lg shadow-lg">
+                        <button id="removeImage" class="mt-4 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors">
+                            <i data-lucide="x" class="w-4 h-4 inline mr-2"></i>
+                            Remover imagen
+                        </button>
+                    </div>
+                </div>
+                <input type="file" id="imageInput" accept="image/*" class="hidden">
+            </div>
+
+            <!-- Options Card -->
+            <div class="card-gradient backdrop-blur-xl rounded-2xl p-8 mb-8 fade-in">
+                <h2 class="text-2xl font-semibold text-white mb-6 flex items-center gap-3">
+                    <i data-lucide="settings" class="w-6 h-6 text-purple-400"></i>
+                    Configuración Premium
+                </h2>
+
+                <!-- Model Selection -->
+                <div class="mb-6">
+                    <label class="block text-white text-lg mb-4 font-semibold">Selecciona tu Modelo IA:</label>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="model-option model-card rounded-xl p-5 cursor-pointer"
+                             data-model="ultra_fast">
+                            <div class="flex items-center mb-3">
+                                <input type="radio" name="model" value="ultra_fast" class="mr-3 accent-purple-500" checked>
+                                <span class="text-white font-bold text-lg">Ultra Fast</span>
+                                <span class="ml-auto bg-purple-500/20 text-purple-300 px-2 py-1 rounded-full text-xs font-semibold">POPULAR</span>
+                            </div>
+                            <p class="text-gray-300 text-sm mb-2">Procesamiento ultra rápido para previews</p>
+                            <div class="flex items-center gap-4 text-xs text-gray-400">
+                                <span class="flex items-center gap-1"><i data-lucide="zap" class="w-3 h-3"></i> 480p</span>
+                                <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ~30s</span>
+                                <span class="flex items-center gap-1"><i data-lucide="star" class="w-3 h-3"></i> 8s</span>
+                            </div>
+                        </div>
+                        <div class="model-option model-card rounded-xl p-5 cursor-pointer"
+                             data-model="fast">
+                            <div class="flex items-center mb-3">
+                                <input type="radio" name="model" value="fast" class="mr-3 accent-purple-500">
+                                <span class="text-white font-bold text-lg">Fast</span>
+                                <span class="ml-auto bg-green-500/20 text-green-300 px-2 py-1 rounded-full text-xs font-semibold">EQUILIBRADO</span>
+                            </div>
+                            <p class="text-gray-300 text-sm mb-2">Mejor calidad con velocidad óptima</p>
+                            <div class="flex items-center gap-4 text-xs text-gray-400">
+                                <span class="flex items-center gap-1"><i data-lucide="zap" class="w-3 h-3"></i> 480p</span>
+                                <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ~1min</span>
+                                <span class="flex items-center gap-1"><i data-lucide="star" class="w-3 h-3"></i> 8s</span>
+                            </div>
+                        </div>
+                        <div class="model-option model-card rounded-xl p-5 cursor-pointer"
+                             data-model="quality">
+                            <div class="flex items-center mb-3">
+                                <input type="radio" name="model" value="quality" class="mr-3 accent-purple-500">
+                                <span class="text-white font-bold text-lg">Quality</span>
+                                <span class="ml-auto bg-blue-500/20 text-blue-300 px-2 py-1 rounded-full text-xs font-semibold">PREMIUM</span>
+                            </div>
+                            <p class="text-gray-300 text-sm mb-2">Alta definición para resultados profesionales</p>
+                            <div class="flex items-center gap-4 text-xs text-gray-400">
+                                <span class="flex items-center gap-1"><i data-lucide="zap" class="w-3 h-3"></i> 720p</span>
+                                <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ~3min</span>
+                                <span class="flex items-center gap-1"><i data-lucide="star" class="w-3 h-3"></i> 8s</span>
+                            </div>
+                        </div>
+                        <div class="model-option model-card rounded-xl p-5 cursor-pointer"
+                             data-model="text_to_video">
+                            <div class="flex items-center mb-3">
+                                <input type="radio" name="model" value="text_to_video" class="mr-3 accent-purple-500">
+                                <span class="text-white font-bold text-lg">Text Only</span>
+                                <span class="ml-auto bg-orange-500/20 text-orange-300 px-2 py-1 rounded-full text-xs font-semibold">CREATIVO</span>
+                            </div>
+                            <p class="text-gray-300 text-sm mb-2">Genera video únicamente desde texto</p>
+                            <div class="flex items-center gap-4 text-xs text-gray-400">
+                                <span class="flex items-center gap-1"><i data-lucide="file-text" class="w-3 h-3"></i> Sin imagen</span>
+                                <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ~45s</span>
+                                <span class="flex items-center gap-1"><i data-lucide="star" class="w-3 h-3"></i> 8s</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Prompt Input -->
+                <div class="mb-6">
+                    <label for="prompt" class="block text-white text-lg mb-4 font-semibold flex items-center gap-2">
+                        <i data-lucide="edit-3" class="w-5 h-5 text-purple-400"></i>
+                        Describe tu Visión Creativa:
+                    </label>
+                    <textarea
+                        id="prompt"
+                        placeholder="Ej: Una escena cinematográfica con iluminación dramática, movimiento de cámara suave, composición artística, detalles hiperrealistas..."
+                        class="input-premium w-full rounded-xl p-5 text-white placeholder-gray-400 focus:outline-none resize-none text-base leading-relaxed"
+                        rows="4"></textarea>
+                    <p class="text-gray-400 text-sm mt-3 flex items-center gap-2">
+                        <i data-lucide="info" class="w-4 h-4"></i>
+                        Cuanto más detallado sea tu prompt, mejor será el resultado
+                    </p>
+                </div>
+
+                <!-- Auto Optimize Toggle -->
+                <div class="flex items-center justify-between mb-6 p-4 rounded-xl bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20">
+                    <div class="flex-1">
+                        <h3 class="text-white font-semibold mb-1 flex items-center gap-2">
+                            <i data-lucide="brain" class="w-5 h-5 text-purple-400"></i>
+                            Optimización IA Avanzada
+                        </h3>
+                        <p class="text-gray-300 text-sm">Mejora automática de prompts con IA para resultados premium</p>
+                        <p class="text-gray-400 text-xs mt-1">Incluye traducción automática multilingüe</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer ml-4">
+                        <input type="checkbox" id="autoOptimize" class="sr-only peer" checked>
+                        <div class="w-12 h-7 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-500/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-purple-500 peer-checked:to-blue-500"></div>
+                    </label>
+                </div>
+
+                <!-- Audio Generation Toggle -->
+                <div class="flex items-center justify-between mb-4 p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
+                    <div class="flex-1">
+                        <h3 class="text-white font-semibold mb-1 flex items-center gap-2">
+                            <i data-lucide="music" class="w-5 h-5 text-emerald-400"></i>
+                            Audio Foley Automático
+                        </h3>
+                        <p class="text-gray-300 text-sm">Añade efectos de sonido y audio ambiental generado por IA</p>
+                        <p class="text-gray-400 text-xs mt-1">Procesamiento adicional • +30s al tiempo total</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer ml-4">
+                        <input type="checkbox" id="addAudio" class="sr-only peer">
+                        <div class="w-12 h-7 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-500/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-emerald-500 peer-checked:to-teal-500"></div>
+                    </label>
+                </div>
+
+                <!-- 1080P Upscale Toggle -->
+                <div class="flex items-center justify-between mb-6 p-4 rounded-xl bg-gradient-to-r from-blue-500/10 to-indigo-500/10 border border-blue-500/20">
+                    <div class="flex-1">
+                        <h3 class="text-white font-semibold mb-1 flex items-center gap-2">
+                            <i data-lucide="expand" class="w-5 h-5 text-blue-400"></i>
+                            Escalar a 1080P Premium
+                        </h3>
+                        <p class="text-gray-300 text-sm">Mejora la resolución a Full HD con tecnología de upscale profesional</p>
+                        <p class="text-gray-400 text-xs mt-1">Procesamiento adicional • +45s al tiempo total</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer ml-4">
+                        <input type="checkbox" id="upscale1080p" class="sr-only peer">
+                        <div class="w-12 h-7 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-blue-500 peer-checked:to-indigo-500"></div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Generate Button -->
+            <div class="text-center mb-8">
+                <button id="generateBtn" class="premium-button text-white font-bold py-5 px-16 rounded-2xl text-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
+                    <span id="generateText">
+                        <i data-lucide="sparkles" class="w-6 h-6 inline mr-3"></i>
+                        Crear Video Premium
+                        <i data-lucide="arrow-right" class="w-6 h-6 inline ml-3"></i>
+                    </span>
+                    <span id="generatingText" class="hidden">
+                        <i data-lucide="loader" class="w-6 h-6 inline mr-3 animate-spin"></i>
+                        Generando tu obra maestra...
+                    </span>
+                </button>
+                <p class="text-gray-500 text-sm mt-4">Procesamiento seguro con tecnología IA de última generación</p>
+            </div>
+
+            <!-- Progress and Result -->
+            <div id="progressSection" class="hidden card-gradient backdrop-blur-xl rounded-2xl p-8 mb-8 fade-in">
+                <div class="text-center">
+                    <div class="mb-8">
+                        <div class="relative mb-6">
+                            <div class="w-20 h-20 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                                <i data-lucide="brain" class="w-10 h-10 text-white animate-bounce"></i>
+                            </div>
+                            <div class="absolute -top-1 -right-1 w-6 h-6 bg-purple-500 rounded-full animate-ping"></div>
+                        </div>
+                        <h3 class="text-3xl font-bold text-white mb-3 glow-text">Creando tu Obra Maestra</h3>
+                        <p id="progressText" class="text-gray-300 text-lg">Analizando tu visión creativa con IA avanzada...</p>
+                    </div>
+                    <div class="bg-gray-700/50 rounded-full h-4 mb-6 overflow-hidden">
+                        <div id="progressBar" class="bg-gradient-to-r from-purple-500 via-blue-500 to-purple-600 h-4 rounded-full transition-all duration-700 ease-out relative" style="width: 10%">
+                            <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse"></div>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap justify-center items-center gap-4 text-sm text-gray-400">
+                        <span class="flex items-center gap-2"><i data-lucide="clock" class="w-4 h-4"></i> <span id="estimatedTime">1-5 minutos</span></span>
+                        <span class="flex items-center gap-2"><i data-lucide="shield" class="w-4 h-4"></i> Proceso seguro</span>
+                        <span class="flex items-center gap-2"><i data-lucide="cpu" class="w-4 h-4"></i> IA Premium</span>
+                        <span id="audioIndicator" class="flex items-center gap-2 hidden"><i data-lucide="music" class="w-4 h-4 text-emerald-400"></i> +Audio</span>
+                        <span id="upscaleIndicator" class="flex items-center gap-2 hidden"><i data-lucide="expand" class="w-4 h-4 text-blue-400"></i> +1080P</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Result Section -->
+            <div id="resultSection" class="hidden card-gradient backdrop-blur-xl rounded-2xl p-8 fade-in">
+                <div class="text-center mb-8">
+                    <div class="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i data-lucide="check-circle" class="w-8 h-8 text-white"></i>
+                    </div>
+                    <h2 class="text-3xl font-bold text-white mb-2 glow-text">¡Obra Maestra Completada!</h2>
+                    <p class="text-gray-300">Tu video premium está listo para descargar</p>
+                </div>
+
+                <div class="mb-6">
+                    <h3 class="text-white font-semibold mb-2">Prompt utilizado:</h3>
+                    <p id="usedPrompt" class="bg-white/10 rounded-lg p-4 text-white/80 text-sm"></p>
+                </div>
+
+                <div class="text-center">
+                    <video id="resultVideo" controls class="max-w-full rounded-lg shadow-lg mx-auto mb-6" style="max-height: 400px;">
+                        Tu navegador no soporta el elemento video.
+                    </video>
+
+                    <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                        <button id="downloadBtn" class="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center gap-3 shadow-lg hover:shadow-green-500/25">
+                            <i data-lucide="download" class="w-6 h-6"></i>
+                            Descargar Video Premium
+                            <i data-lucide="file-video" class="w-6 h-6"></i>
+                        </button>
+                        <button id="newVideoBtn" class="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center gap-3">
+                            <i data-lucide="refresh-cw" class="w-6 h-6"></i>
+                            Crear Nueva Obra
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Section -->
+            <div id="errorSection" class="hidden card-gradient backdrop-blur-xl rounded-2xl p-8 fade-in">
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-gradient-to-r from-red-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <i data-lucide="alert-triangle" class="w-8 h-8 text-white"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold text-white mb-3">Procesamiento Interrumpido</h3>
+                    <p id="errorText" class="text-gray-300 mb-8 text-lg"></p>
+                    <button id="retryBtn" class="bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center gap-3 mx-auto">
+                        <i data-lucide="refresh-cw" class="w-6 h-6"></i>
+                        Reintentar Creación
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="container mx-auto px-4 py-12 text-center">
+        <div class="flex justify-center items-center gap-6 mb-6">
+            <div class="flex items-center gap-2 text-purple-400">
+                <i data-lucide="sparkles" class="w-5 h-5"></i>
+                <span class="font-semibold">SynthClip</span>
+            </div>
+            <div class="w-px h-6 bg-gradient-to-b from-transparent via-purple-400 to-transparent"></div>
+            <div class="flex items-center gap-2 text-gray-400">
+                <i data-lucide="cpu" class="w-4 h-4"></i>
+                <span class="text-sm">IA Premium</span>
+            </div>
+            <div class="w-px h-6 bg-gradient-to-b from-transparent via-purple-400 to-transparent"></div>
+            <div class="flex items-center gap-2 text-gray-400">
+                <i data-lucide="shield" class="w-4 h-4"></i>
+                <span class="text-sm">Tecnología Segura</span>
+            </div>
+        </div>
+        <p class="text-gray-500 text-xs uppercase tracking-widest font-semibold">
+            Powered by Wavespeed AI • Creado con pasión para la innovación
+        </p>
+    </footer>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // DOM Elements
+        const uploadArea = document.getElementById('uploadArea');
+        const uploadContent = document.getElementById('uploadContent');
+        const imagePreview = document.getElementById('imagePreview');
+        const previewImg = document.getElementById('previewImg');
+        const imageInput = document.getElementById('imageInput');
+        const removeImage = document.getElementById('removeImage');
+        const promptTextarea = document.getElementById('prompt');
+        const autoOptimizeCheckbox = document.getElementById('autoOptimize');
+        const addAudioCheckbox = document.getElementById('addAudio');
+        const upscale1080pCheckbox = document.getElementById('upscale1080p');
+        const generateBtn = document.getElementById('generateBtn');
+        const estimatedTime = document.getElementById('estimatedTime');
+        const audioIndicator = document.getElementById('audioIndicator');
+        const upscaleIndicator = document.getElementById('upscaleIndicator');
+        const generateText = document.getElementById('generateText');
+        const generatingText = document.getElementById('generatingText');
+        const progressSection = document.getElementById('progressSection');
+        const progressText = document.getElementById('progressText');
+        const progressBar = document.getElementById('progressBar');
+        const resultSection = document.getElementById('resultSection');
+        const resultVideo = document.getElementById('resultVideo');
+        const usedPrompt = document.getElementById('usedPrompt');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const newVideoBtn = document.getElementById('newVideoBtn');
+        const errorSection = document.getElementById('errorSection');
+        const errorText = document.getElementById('errorText');
+        const retryBtn = document.getElementById('retryBtn');
+        const modelOptions = document.querySelectorAll('.model-option');
+
+        // State
+        let selectedImage = null;
+        let selectedModel = 'ultra_fast';
+        let currentTaskId = null;
+        let videoUrl = null;
+        let userFingerprint = null;
+
+        // Upload functionality
+        uploadArea.addEventListener('click', () => {
+            imageInput.click();
+        });
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        imageInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        removeImage.addEventListener('click', () => {
+            selectedImage = null;
+            imagePreview.classList.add('hidden');
+            uploadContent.classList.remove('hidden');
+            updateGenerateButton();
+        });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) {
+                alert('Por favor selecciona un archivo de imagen válido.');
+                return;
+            }
+
+            if (file.size > 10 * 1024 * 1024) { // 10MB
+                alert('La imagen es demasiado grande. Máximo 10MB.');
+                return;
+            }
+
+            selectedImage = file;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImg.src = e.target.result;
+                uploadContent.classList.add('hidden');
+                imagePreview.classList.remove('hidden');
+                updateGenerateButton();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Model selection
+        modelOptions.forEach(option => {
+            option.addEventListener('click', () => {
+                const model = option.dataset.model;
+                selectedModel = model;
+
+                // Update radio buttons
+                document.querySelectorAll('input[name="model"]').forEach(radio => {
+                    radio.checked = radio.value === model;
+                });
+
+                // Update visual selection
+                modelOptions.forEach(opt => {
+                    opt.classList.remove('model-selected');
+                    opt.classList.remove('ring-2', 'ring-purple-400');
+                });
+                option.classList.add('model-selected');
+                option.classList.add('ring-2', 'ring-purple-400');
+            });
+        });
+
+        // Initialize first model as selected
+        document.querySelector('.model-option[data-model="ultra_fast"]').classList.add('model-selected', 'ring-2', 'ring-purple-400');
+
+        // Generate button state
+        function updateGenerateButton() {
+            const hasImage = selectedImage !== null;
+            const hasPrompt = promptTextarea.value.trim().length > 0;
+            const isTextToVideo = selectedModel === 'text_to_video';
+
+            generateBtn.disabled = isTextToVideo ? !hasPrompt : !(hasImage && hasPrompt);
+        }
+
+        promptTextarea.addEventListener('input', updateGenerateButton);
+        document.querySelectorAll('input[name="model"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                selectedModel = e.target.value;
+                updateGenerateButton();
+            });
+        });
+
+        // Update time estimation based on selected features
+        function updateTimeEstimation() {
+            let baseTime = 300; // 5 minutes in seconds
+            let hasAudio = addAudioCheckbox.checked;
+            let hasUpscale = upscale1080pCheckbox.checked;
+
+            if (hasAudio) baseTime += 120; // +2 minutes for audio
+            if (hasUpscale) baseTime += 90; // +1.5 minutes for upscale
+
+            let minTime = Math.floor(baseTime / 60);
+            let maxTime = Math.floor((baseTime * 1.4) / 60); // 40% variance
+
+            estimatedTime.textContent = `${minTime}-${maxTime} minutos`;
+
+            // Update indicators
+            if (hasAudio) {
+                audioIndicator.classList.remove('hidden');
+            } else {
+                audioIndicator.classList.add('hidden');
+            }
+
+            if (hasUpscale) {
+                upscaleIndicator.classList.remove('hidden');
+            } else {
+                upscaleIndicator.classList.add('hidden');
+            }
+        }
+
+        // Checkbox handlers
+        addAudioCheckbox.addEventListener('change', updateTimeEstimation);
+        upscale1080pCheckbox.addEventListener('change', updateTimeEstimation);
+
+        // Generate video
+        generateBtn.addEventListener('click', async () => {
+            if (generateBtn.disabled) return;
+
+            try {
+                // Show progress
+                progressSection.classList.remove('hidden');
+                resultSection.classList.add('hidden');
+                errorSection.classList.add('hidden');
+                generateText.classList.add('hidden');
+                generatingText.classList.remove('hidden');
+                generateBtn.disabled = true;
+
+                // Prepare form data
+                const formData = new FormData();
+                if (selectedImage && selectedModel !== 'text_to_video') {
+                    formData.append('image', selectedImage);
+                }
+                formData.append('prompt', promptTextarea.value.trim());
+                formData.append('model', selectedModel);
+                formData.append('auto_optimize', autoOptimizeCheckbox.checked);
+                formData.append('add_audio', addAudioCheckbox.checked);
+                formData.append('upscale_1080p', upscale1080pCheckbox.checked);
+                formData.append('fingerprint', userFingerprint || generateBrowserFingerprint());
+
+                // Start generation
+                progressText.textContent = 'Iniciando generación de video...';
+                progressBar.style.width = '10%';
+
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    // Handle rate limit errors
+                    if (result.error === "Límite diario excedido") {
+                        showRateLimitError(result);
+                        return;
+                    } else if (result.error === "Actividad sospechosa detectada") {
+                        showSuspiciousUserError(result);
+                        return;
+                    }
+                    throw new Error(`Error ${response.status}: ${response.statusText}`);
+                }
+                currentTaskId = result.task_id;
+
+                // Poll for status
+                await pollStatus();
+
+            } catch (error) {
+                showError(error.message);
+            }
+        });
+
+        async function pollStatus() {
+            const maxAttempts = 240; // ~4 minutes
+            let attempts = 0;
+
+            while (attempts < maxAttempts) {
+                try {
+                    const response = await fetch(`/status/${currentTaskId}`);
+                    const status = await response.json();
+
+                    if (status.status === 'completed') {
+                        showResult(status);
+                        return;
+                    } else if (status.status === 'failed') {
+                        throw new Error(status.error || 'La generación del video falló');
+                    }
+
+                    // Update progress
+                    const progressPercent = Math.min(10 + (attempts / maxAttempts) * 80, 90);
+                    progressBar.style.width = `${progressPercent}%`;
+
+                    const messages = [
+                        'Analizando imagen y generando prompt optimizado...',
+                        'Procesando con IA avanzada...',
+                        'Generando frames del video...',
+                        'Aplicando efectos y composición...',
+                        'Finalizando video...'
+                    ];
+                    progressText.textContent = messages[Math.floor((attempts / maxAttempts) * messages.length)];
+
+                    attempts++;
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+
+                } catch (error) {
+                    throw new Error('Error al verificar el estado del video');
+                }
+            }
+
+            throw new Error('Timeout: La generación del video tomó demasiado tiempo');
+        }
+
+        function showResult(result) {
+            progressSection.classList.add('hidden');
+            resultSection.classList.remove('hidden');
+            errorSection.classList.add('hidden');
+
+            // Display prompt information
+            let promptInfo = result.prompt_used || promptTextarea.value;
+
+            if (result.was_optimized) {
+                promptInfo += '\n\n🤖 Prompt optimizado con IA para mejores resultados.';
+            }
+
+            usedPrompt.textContent = promptInfo;
+            resultVideo.src = result.video_url;
+            videoUrl = result.video_url;
+
+            generateText.classList.remove('hidden');
+            generatingText.classList.add('hidden');
+            generateBtn.disabled = false;
+
+            // Refresh usage info after successful generation
+            loadUsageInfo();
+        }
+
+        function showError(message) {
+            progressSection.classList.add('hidden');
+            resultSection.classList.add('hidden');
+            errorSection.classList.remove('hidden');
+
+            errorText.textContent = message;
+
+            generateText.classList.remove('hidden');
+            generatingText.classList.add('hidden');
+            generateBtn.disabled = false;
+        }
+
+        function showRateLimitError(data) {
+            progressSection.classList.add('hidden');
+            resultSection.classList.add('hidden');
+            errorSection.classList.remove('hidden');
+
+            errorText.innerHTML = `
+                <div class="text-center">
+                    <p class="text-lg font-semibold mb-2">${data.error}</p>
+                    <p class="mb-4">${data.message}</p>
+                    <p class="text-sm text-gray-400">Reseteo diario: ${data.reset_time}</p>
+                    <p class="text-sm text-purple-300 mt-3">${data.upgrade_message}</p>
+                </div>
+            `;
+
+            generateText.classList.remove('hidden');
+            generatingText.classList.add('hidden');
+            generateBtn.disabled = true; // Disable button when limit exceeded
+        }
+
+        function showSuspiciousUserError(data) {
+            progressSection.classList.add('hidden');
+            resultSection.classList.add('hidden');
+            errorSection.classList.remove('hidden');
+
+            errorText.innerHTML = `
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-gradient-to-r from-orange-500 to-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i data-lucide="shield-alert" class="w-8 h-8 text-white"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold text-white mb-3">Actividad Sospechosa Detectada</h3>
+                    <p class="text-gray-300 mb-4">${data.message}</p>
+                    <p class="text-sm text-gray-400 mb-4">Si crees que esto es un error, por favor contacta con soporte.</p>
+                    <p class="text-sm text-orange-300">${data.upgrade_message}</p>
+                </div>
+            `;
+
+            generateText.classList.remove('hidden');
+            generatingText.classList.add('hidden');
+            generateBtn.disabled = true; // Disable button for suspicious users
+        }
+
+        // Download video
+        downloadBtn.addEventListener('click', () => {
+            if (videoUrl) {
+                const a = document.createElement('a');
+                a.href = videoUrl;
+                a.download = `synthclip-video-${Date.now()}.mp4`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+        });
+
+        // New video
+        newVideoBtn.addEventListener('click', () => {
+            selectedImage = null;
+            imagePreview.classList.add('hidden');
+            uploadContent.classList.remove('hidden');
+            promptTextarea.value = '';
+            autoOptimizeCheckbox.checked = false;
+            addAudioCheckbox.checked = false;
+            upscale1080pCheckbox.checked = false;
+            updateTimeEstimation();
+            progressSection.classList.add('hidden');
+            resultSection.classList.add('hidden');
+            errorSection.classList.add('hidden');
+            updateGenerateButton();
+        });
+
+        // Retry
+        retryBtn.addEventListener('click', () => {
+            errorSection.classList.add('hidden');
+        });
+
+        // Generate browser fingerprint
+        function generateBrowserFingerprint() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.textBaseline = 'top';
+            ctx.font = '14px Arial';
+            ctx.fillText('Fingerprint', 2, 2);
+
+            const fingerprint = {
+                userAgent: navigator.userAgent,
+                language: navigator.language,
+                platform: navigator.platform,
+                cookieEnabled: navigator.cookieEnabled,
+                screenResolution: `${screen.width}x${screen.height}`,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                canvas: canvas.toDataURL().substring(0, 50), // Canvas fingerprint
+                webgl: getWebGLFingerprint(),
+                hardwareConcurrency: navigator.hardwareConcurrency || 0
+            };
+
+            // Create hash from fingerprint
+            const fingerprintString = JSON.stringify(fingerprint);
+            let hash = 0;
+            for (let i = 0; i < fingerprintString.length; i++) {
+                const char = fingerprintString.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convert to 32-bit integer
+            }
+
+            return Math.abs(hash).toString(16).substring(0, 16);
+        }
+
+        function getWebGLFingerprint() {
+            try {
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                if (!gl) return 'no-webgl';
+
+                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                if (debugInfo) {
+                    return gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL).substring(0, 30);
+                }
+                return gl.getParameter(gl.RENDERER).substring(0, 30);
+            } catch (e) {
+                return 'webgl-error';
+            }
+        }
+
+        // Load usage information on page load
+        async function loadUsageInfo() {
+            try {
+                // Generate fingerprint if not already done
+                if (!userFingerprint) {
+                    userFingerprint = generateBrowserFingerprint();
+                }
+
+                const response = await fetch('/usage');
+                const data = await response.json();
+
+                const usageText = document.getElementById('usageText');
+                const usageIndicator = document.getElementById('usageIndicator');
+
+                if (data.suspicious) {
+                    usageText.textContent = 'Cuenta suspendida - Contacta soporte';
+                    usageIndicator.classList.remove('bg-gray-800/60', 'border-gray-600/50');
+                    usageIndicator.classList.add('bg-red-900/60', 'border-red-600/50');
+                } else if (data.allowed) {
+                    usageText.textContent = `${data.remaining_today} videos restantes hoy`;
+                    usageIndicator.classList.remove('bg-red-900/60', 'border-red-600/50');
+                    usageIndicator.classList.add('bg-gray-800/60', 'border-gray-600/50');
+                } else {
+                    usageText.textContent = `Límite alcanzado (${data.used_today}/${data.daily_limit})`;
+                    usageIndicator.classList.remove('bg-gray-800/60', 'border-gray-600/50');
+                    usageIndicator.classList.add('bg-red-900/60', 'border-red-600/50');
+                }
+            } catch (error) {
+                console.error('Error loading usage info:', error);
+                document.getElementById('usageText').textContent = 'Error al cargar información de uso';
+            }
+        }
+
+        // Initialize
+        updateGenerateButton();
+        loadUsageInfo();
+    </script>
+</body>
+</html>

@@ -73,7 +73,8 @@ class AsyncWavespeedAPI:
                     response.raise_for_status()
                     result = await response.json()
                     logger.info("✅ Video generation request submitted successfully")
-                    return result
+                    # Return the data object directly as shown in the official API example
+                    return result.get("data", result)
             except aiohttp.ClientError as e:
                 logger.error(f"❌ Error en la API de Wavespeed: {e}")
                 raise
@@ -88,7 +89,9 @@ class AsyncWavespeedAPI:
             try:
                 async with session.get(endpoint) as response:
                     response.raise_for_status()
-                    return await response.json()
+                    result = await response.json()
+                    # Return the data object directly as shown in the official API example
+                    return result.get("data", result)
             except aiohttp.ClientError as e:
                 logger.error(f"❌ Error obteniendo estado del video: {e}")
                 raise
@@ -165,8 +168,18 @@ class AsyncWavespeedAPI:
                 async with session.post(endpoint, json=payload) as response:
                     response.raise_for_status()
                     result = await response.json()
-                    logger.info("✅ Prompt optimization request submitted successfully")
-                    return result
+                    logger.info(f"✅ Prompt optimization request submitted successfully: {result}")
+
+                    # Extract the task ID from the response (can be nested in data)
+                    task_id = (result.get("data", {}).get("id") or
+                              result.get("id") or
+                              result.get("request_id") or
+                              result.get("task_id"))
+                    if not task_id:
+                        logger.error(f"❌ No task ID found in response: {result}")
+                        raise ValueError("No task ID in prompt optimization response")
+
+                    return {"id": task_id, "result": result}
             except aiohttp.ClientError as e:
                 logger.error(f"❌ Error en nuevo prompt optimizer v3: {e}")
                 raise
@@ -208,6 +221,197 @@ class AsyncWavespeedAPI:
         base_message += "💡 Contacta al administrador si el problema persiste."
 
         return base_message
+
+    async def optimize_prompt_text_only(self, text: str, mode: str = "video", style: str = "default") -> Dict[str, Any]:
+        """
+        Optimiza un prompt de texto solo (sin imagen) usando WaveSpeedAI
+        Ahora usa modo asíncrono para consistencia y mejor manejo de timeouts
+        """
+        try:
+            endpoint = f"{self.base_url}/api/v3/wavespeed-ai/prompt-optimizer"
+
+            payload = {
+                "enable_sync_mode": False,  # Cambiar a modo asíncrono para consistencia
+                "image": "",  # Sin imagen
+                "mode": mode,
+                "style": style,
+                "text": text
+            }
+
+            print(f"🤖 Optimizing text-only prompt: {text[:50]}...")
+            async with aiohttp.ClientSession(headers=self.headers) as session:
+                async with session.post(endpoint, json=payload) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    print("✅ Text-only prompt optimization request submitted")
+
+                    # Extract the task ID from the response (can be nested in data)
+                    task_id = (result.get("data", {}).get("id") or
+                              result.get("id") or
+                              result.get("request_id") or
+                              result.get("task_id"))
+                    if not task_id:
+                        logger.error(f"❌ No task ID found in text-only optimization response: {result}")
+                        raise ValueError("No task ID in text-only prompt optimization response")
+
+                    # Poll for result immediately (text-only should be fast)
+                    max_attempts = 10
+                    for attempt in range(max_attempts):
+                        try:
+                            status_result = await self.get_prompt_optimizer_result(task_id)
+
+                            if status_result.get("status") == "completed":
+                                print("✅ Text-only prompt optimization completed")
+                                return status_result
+                            elif status_result.get("status") == "failed":
+                                print("⚠️  Text-only prompt optimization failed on server side")
+                                return {"optimized_prompt": text}  # Return original text
+
+                            await asyncio.sleep(0.3)  # Shorter wait for text-only
+
+                        except Exception as poll_error:
+                            print(f"⚠️  Error polling text-only optimization: {poll_error}")
+                            break
+
+                    # If polling fails, return original text
+                    print("⚠️  Text-only optimization polling failed, using original text")
+                    return {"optimized_prompt": text}
+
+        except Exception as e:
+            print(f"❌ Text-only prompt optimization failed: {e}")
+            # Return original text on failure
+            return {"optimized_prompt": text}
+
+    async def add_audio_to_video(self, video_url: str, prompt: str = "") -> Optional[str]:
+        """
+        Add audio/foley to a video using WavespeedAI audio API
+        """
+        try:
+            # Audio generation API
+            audio_url = f"{self.base_url}/api/v3/wavespeed-ai/hunyuan-video-foley"
+            audio_payload = {
+                "seed": -1,  # Random seed
+                "video": video_url,
+                "prompt": prompt  # Use the video prompt for better audio generation
+            }
+
+            print(f"🎵 Sending audio request for video: {video_url}")
+            async with aiohttp.ClientSession(headers=self.headers) as session:
+                async with session.post(audio_url, json=audio_payload) as response:
+                    response.raise_for_status()
+                    audio_result = await response.json()
+
+                    if audio_result.get("data") and audio_result["data"].get("id"):
+                        audio_request_id = audio_result["data"]["id"]
+                        print(f"🎵 Audio generation started, request ID: {audio_request_id}")
+                    else:
+                        print(f"❌ Invalid audio API response: {audio_result}")
+                        return None
+
+            # Poll for audio completion
+            audio_status_url = f"{self.base_url}/api/v3/predictions/{audio_request_id}/result"
+            max_audio_attempts = 120  # ~2 minutes for audio
+
+            for attempt in range(max_audio_attempts):
+                try:
+                    async with aiohttp.ClientSession(headers=self.headers) as session:
+                        async with session.get(audio_status_url) as response:
+                            if response.status == 200:
+                                status_result = await response.json()
+
+                                if status_result.get("data"):
+                                    audio_data = status_result["data"]
+                                    status = audio_data.get("status")
+
+                                    if status == "completed":
+                                        if audio_data.get("outputs") and len(audio_data["outputs"]) > 0:
+                                            audio_video_url = audio_data["outputs"][0]
+                                            print(f"🎵 Audio generation completed: {audio_video_url}")
+                                            return audio_video_url
+
+                                    elif status == "failed":
+                                        error_msg = audio_data.get("error", "Audio generation failed")
+                                        print(f"❌ Audio generation failed: {error_msg}")
+                                        return None
+
+                    print(f"⏳ Audio processing... ({attempt + 1}/{max_audio_attempts})")
+                    await asyncio.sleep(1)
+
+                except Exception as e:
+                    print(f"⚠️  Audio polling error: {e}")
+                    await asyncio.sleep(1)
+
+            print("⏰ Audio generation timeout")
+            return None
+
+        except Exception as e:
+            print(f"❌ Audio generation error: {e}")
+            return None
+
+    async def upscale_video_to_1080p(self, video_url: str) -> Optional[str]:
+        """
+        Upscale video to 1080P using WavespeedAI video upscaler pro
+        """
+        try:
+            # Video upscale API
+            upscale_url = f"{self.base_url}/api/v3/wavespeed-ai/video-upscaler-pro"
+            upscale_payload = {
+                "target_resolution": "1080p",
+                "video": video_url
+            }
+
+            print(f"⬆️ Sending upscale request for video: {video_url}")
+            async with aiohttp.ClientSession(headers=self.headers) as session:
+                async with session.post(upscale_url, json=upscale_payload) as response:
+                    response.raise_for_status()
+                    upscale_result = await response.json()
+
+                    if upscale_result.get("data") and upscale_result["data"].get("id"):
+                        upscale_request_id = upscale_result["data"]["id"]
+                        print(f"⬆️ Upscale generation started, request ID: {upscale_request_id}")
+                    else:
+                        print(f"❌ Invalid upscale API response: {upscale_result}")
+                        return None
+
+            # Poll for upscale completion
+            upscale_status_url = f"{self.base_url}/api/v3/predictions/{upscale_request_id}/result"
+            max_upscale_attempts = 120  # ~2 minutes for upscale
+
+            for attempt in range(max_upscale_attempts):
+                try:
+                    async with aiohttp.ClientSession(headers=self.headers) as session:
+                        async with session.get(upscale_status_url) as response:
+                            if response.status == 200:
+                                status_result = await response.json()
+
+                                if status_result.get("data"):
+                                    upscale_data = status_result["data"]
+                                    status = upscale_data.get("status")
+
+                                    if status == "completed":
+                                        if upscale_data.get("outputs") and len(upscale_data["outputs"]) > 0:
+                                            upscaled_video_url = upscale_data["outputs"][0]
+                                            print(f"⬆️ Upscale completed: {upscaled_video_url}")
+                                            return upscaled_video_url
+
+                                    elif status == "failed":
+                                        error_msg = upscale_data.get("error", "Upscale failed")
+                                        print(f"❌ Upscale failed: {error_msg}")
+                                        return None
+
+                    print(f"⏫ Upscaling... ({attempt + 1}/{max_upscale_attempts})")
+                    await asyncio.sleep(1)
+
+                except Exception as e:
+                    print(f"⚠️  Upscale polling error: {e}")
+                    await asyncio.sleep(1)
+
+            print("⏰ Upscale timeout")
+            return None
+
+        except Exception as e:
+            print(f"❌ Upscale error: {e}")
+            return None
 
     def get_available_models(self) -> Dict[str, Dict[str, Any]]:
         """

@@ -1,2 +1,3 @@
-web: python minimal_app.py
+web: python bot.py
+debug: python bot.py debug
 

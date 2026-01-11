@@ -19,7 +19,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from config import Config
 from bot import (
     start, help_command, list_models_command, handle_text_video,
-    handle_quality_video, handle_preview_video, handle_optimize,
+    handle_quality_video, handle_preview_video, handle_optimize, handle_lastvideo, handle_balance, handle_debug_files, handle_download, handle_social_url,
     handle_photo, handle_document_image, handle_sticker_image,
     image_document_filter, static_sticker_filter
 )
@@ -97,6 +97,13 @@ async def lifespan(app: FastAPI):
             telegram_app.add_handler(CommandHandler("quality", handle_quality_video))
             telegram_app.add_handler(CommandHandler("preview", handle_preview_video))
             telegram_app.add_handler(CommandHandler("optimize", handle_optimize))
+            telegram_app.add_handler(CommandHandler("lastvideo", handle_lastvideo))
+            telegram_app.add_handler(CommandHandler("balance", handle_balance))
+            telegram_app.add_handler(CommandHandler("debugfiles", handle_debug_files))
+            telegram_app.add_handler(CommandHandler("download", handle_download))
+
+            # Handler automático para URLs de redes sociales (PRIORIDAD ALTA)
+            telegram_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_social_url))
 
             # Agregar manejadores de mensajes (photos, documents, stickers)
             telegram_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
@@ -111,11 +118,29 @@ async def lifespan(app: FastAPI):
             logger.info("✅ Aplicación de Telegram registrada en app_state")
 
             # Configurar webhook si está habilitado
-            if Config.WEBHOOK_URL:
-                try:
-                    await setup_webhook(telegram_app)
-                except Exception as webhook_error:
-                    logger.warning(f"⚠️  Webhook no configurado: {webhook_error} - usando polling")
+            if Config.USE_WEBHOOK:
+                # Si estamos en Railway pero no hay WEBHOOK_URL, intentar inferirla
+                if not Config.WEBHOOK_URL and os.getenv('RAILWAY_ENVIRONMENT'):
+                    # Intentar inferir la URL de Railway
+                    railway_url = f"https://{os.getenv('RAILWAY_PROJECT_ID', 'unknown')}.up.railway.app"
+                    logger.info(f"🔄 Inferiendo WEBHOOK_URL de Railway: {railway_url}")
+                    # Configurar temporalmente para este contexto
+                    Config.WEBHOOK_URL = railway_url
+
+                if Config.WEBHOOK_URL:
+                    try:
+                        await setup_webhook(telegram_app)
+                        logger.info("✅ Webhook configurado correctamente")
+                    except Exception as webhook_error:
+                        logger.error(f"❌ Error configurando webhook: {webhook_error}")
+                        logger.warning("⚠️  El bot no funcionará sin webhook en Railway")
+                        raise webhook_error  # En Railway, webhook es obligatorio
+                else:
+                    logger.error("❌ WEBHOOK_URL no configurada - requerida para Railway")
+                    logger.error("💡 Configura WEBHOOK_URL en las variables de entorno de Railway")
+                    raise ValueError("WEBHOOK_URL requerida para funcionamiento en Railway")
+            else:
+                logger.warning("⚠️  USE_WEBHOOK=false - el bot no funcionará en Railway sin webhooks")
 
             logger.info("🎯 Sistema Event-Driven operativo")
 
@@ -215,6 +240,25 @@ async def health_check():
 
     return response
 
+@app.post("/wavespeed-webhook", tags=["Wavespeed"])
+async def wavespeed_webhook(request: Request, background_tasks: BackgroundTasks):
+    """
+    Endpoint para recibir webhooks de Wavespeed AI cuando los videos estén listos
+    (Funcionalidad futura - Wavespeed aún no soporta webhooks)
+    """
+    try:
+        webhook_data = await request.json()
+        logger.info(f"🎣 Webhook recibido de Wavespeed: {webhook_data}")
+
+        # Aquí iría la lógica para procesar notificaciones de Wavespeed
+        # Por ahora solo loggeamos y retornamos OK
+
+        return {"status": "received", "message": "Webhook processed successfully"}
+
+    except Exception as e:
+        logger.error(f"❌ Error procesando webhook de Wavespeed: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing webhook: {str(e)}")
+
 @app.post("/webhook", tags=["Telegram"])
 async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     """
@@ -222,6 +266,13 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     Procesa las actualizaciones de manera asíncrona con BackgroundTasks
     """
     try:
+        # Log detallado de la request para debugging
+        logger.info("🔗 Webhook request received")
+        logger.info(f"   Method: {request.method}")
+        logger.info(f"   URL: {request.url}")
+        logger.info(f"   Headers: {dict(request.headers)}")
+        logger.info(f"   Content-Type: {request.headers.get('content-type', 'unknown')}")
+
         # Verificar secret token si está configurado
         secret_token = os.getenv('WEBHOOK_SECRET_TOKEN')
         if secret_token:
@@ -241,6 +292,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
         user_id = from_user.get('id', 'unknown')
 
         logger.info(f"📨 Webhook recibido: update_id={update_id}, text='{text[:30]}...', user={user_id}")
+        logger.info(f"   Message keys: {list(message.keys()) if message else 'No message'}")
 
         # Incrementar contador
         app_state["processed_updates"] += 1
@@ -260,7 +312,18 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
         raise
     except Exception as e:
         logger.error(f"❌ Error procesando webhook: {e}")
+        import traceback
+        logger.error(f"   Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/webhook", tags=["Telegram"])
+async def telegram_webhook_get():
+    """
+    Endpoint GET para webhook (por compatibilidad)
+    Telegram a veces hace requests GET para verificar
+    """
+    logger.info("🔗 Webhook GET request (verificación de Telegram)")
+    return {"status": "webhook_endpoint_active"}
 
 async def process_telegram_update(update_data: Dict[str, Any]):
     """
@@ -270,6 +333,7 @@ async def process_telegram_update(update_data: Dict[str, Any]):
         # Update ya está importado al inicio del archivo
         update_id = update_data.get('update_id')
         logger.info(f"🔄 Procesando update {update_id}...")
+        logger.info(f"   Update keys: {list(update_data.keys())}")
 
         # Verificar que la aplicación está lista
         telegram_app = app_state.get("telegram_app")
@@ -279,16 +343,36 @@ async def process_telegram_update(update_data: Dict[str, Any]):
 
         # Crear objeto Update desde los datos
         update = Update.de_json(update_data, telegram_app.bot)
+        logger.info(f"   Update object created: {type(update)}")
 
-        # Verificar si es un mensaje con texto
-        if update.message and update.message.text:
-            text = update.message.text
+        # Log detallado del tipo de update
+        if update.message:
+            logger.info(f"   Tipo: Message")
+            if update.message.photo:
+                logger.info(f"   Contiene: Photo ({len(update.message.photo)} tamaños)")
+                if update.message.caption:
+                    logger.info(f"   Caption: '{update.message.caption[:50]}...'")
+                else:
+                    logger.info(f"   Caption: None (sin caption)")
+            elif update.message.document:
+                logger.info(f"   Contiene: Document ({update.message.document.mime_type})")
+            elif update.message.sticker:
+                logger.info(f"   Contiene: Sticker (animated: {update.message.sticker.is_animated})")
+            elif update.message.text:
+                logger.info(f"   Contiene: Text '{update.message.text[:50]}...'")
+            else:
+                logger.info(f"   Contiene: Otro tipo de mensaje")
+
             user_id = update.message.from_user.id if update.message.from_user else 'unknown'
-            logger.info(f"📨 Mensaje: '{text[:50]}' de user_id={user_id}")
+            logger.info(f"   De usuario: {user_id}")
+        elif update.callback_query:
+            logger.info(f"   Tipo: Callback Query")
+        else:
+            logger.info(f"   Tipo: Otro ({type(update).__name__})")
 
         # Procesar la actualización con el bot
+        logger.info(f"   Enviando a telegram_app.process_update()...")
         await telegram_app.process_update(update)
-
         logger.info(f"✅ Update {update_id} procesado correctamente")
 
     except Exception as e:

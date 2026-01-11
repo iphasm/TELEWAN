@@ -1,19 +1,20 @@
-python-telegram-bot==21.4
-requests==2.31.0  # Mantener para compatibilidad, pero reemplazar en código con aiohttp
+# Core dependencies
 python-dotenv==1.0.0
-pillow>=10.2.0  # Compatible with Python 3.14 (will install latest)
-flask==3.0.0      # Mantener para compatibilidad, pero reemplazar con FastAPI
-gunicorn==21.2.0  # Mantener para compatibilidad, pero usar uvicorn
+pillow>=10.2.0
+requests>=2.31.0
 
-# Async I/O dependencies (Fase 1)
+# Telegram Bot
+python-telegram-bot==21.4
+
+# FastAPI web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Async I/O dependencies
 aiohttp>=3.9.0
 aiofiles==23.1.0
 
-# FastAPI dependencies (Fase 2 - preparado)
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
-
-# Redis dependencies (Fase 3 - preparado)
-redis>=5.0.0
-
-
+# Translation dependencies
+deep-translator==1.11.4
+langdetect==1.0.9

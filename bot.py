@@ -4,27 +4,87 @@ import time
 import io
 import os
 import uuid
+import re
+import subprocess
+import asyncio
+import sys
 from datetime import datetime
+from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, Any, Optional
 # Flask removido - ahora usamos FastAPI (ver fastapi_app.py)
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Message
 
+# DEBUG: Ejecutar diagnóstico de Railway al inicio
+if len(sys.argv) > 1 and sys.argv[1] == 'debug':
+    from debug_railway_startup import debug_railway_environment
+    debug_railway_environment()
+    sys.exit(0)
+
+# Import opcional para curl_cffi (se verifica después de definir logger)
+CURL_CFFI_AVAILABLE = False
+curl_requests = None
+
+def _init_curl_cffi():
+    """Inicializar curl_cffi si está disponible"""
+    global CURL_CFFI_AVAILABLE, curl_requests
+    try:
+        from curl_cffi import requests as curl_req
+        curl_requests = curl_req
+        CURL_CFFI_AVAILABLE = True
+        logger.info("✅ curl_cffi disponible para descargas avanzadas")
+    except ImportError as e:
+        CURL_CFFI_AVAILABLE = False
+        logger.warning(f"⚠️ curl_cffi no disponible - usando solo yt-dlp: {e}")
+
 # Filtros personalizados para imágenes
 class ImageDocumentFilter:
     """Filtro para documentos que son imágenes"""
     def __call__(self, update):
+        return self.check_update(update)
+
+    def check_update(self, update):
         message = update.message or update.channel_post
         if message and message.document:
             mime_type = message.document.mime_type
+            filename = message.document.file_name or ""
+
+            # Log para debugging
+            logger.debug(f"Documento recibido - MIME: {mime_type}, Filename: {filename}")
+
             if mime_type and mime_type.startswith('image/'):
-                supported_formats = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
-                return mime_type.lower() in supported_formats
+                # Formatos de imagen comunes
+                supported_formats = [
+                    'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif',
+                    'image/bmp', 'image/tiff', 'image/tif', 'image/heic', 'image/heif',
+                    'image/svg+xml', 'image/x-icon'
+                ]
+
+                # También verificar por extensión del archivo si el MIME no está claro
+                image_extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif', '.heic', '.heif', '.svg', '.ico']
+                has_image_extension = any(filename.lower().endswith(ext) for ext in image_extensions)
+
+                mime_supported = mime_type.lower() in supported_formats
+                extension_supported = has_image_extension
+
+                result = mime_supported or extension_supported
+
+                if result:
+                    logger.info(f"✅ Documento de imagen aceptado - MIME: {mime_type}, Filename: {filename}")
+                else:
+                    logger.warning(f"❌ Documento de imagen rechazado - MIME: {mime_type}, Filename: {filename}")
+
+                return result
         return False
 
 class StaticStickerFilter:
     """Filtro para stickers estáticos (no animados)"""
     def __call__(self, update):
+        return self.check_update(update)
+
+    def check_update(self, update):
         message = update.message or update.channel_post
         if message and message.sticker:
             return not message.sticker.is_animated
@@ -33,8 +93,120 @@ class StaticStickerFilter:
 # Instancias de los filtros
 image_document_filter = ImageDocumentFilter()
 static_sticker_filter = StaticStickerFilter()
+
+class AsyncVideoProcessor:
+    """
+    Procesador asíncrono para manejar generación de videos de manera eficiente
+    """
+    def __init__(self, max_workers: int = 3):
+        self.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="video_processor")
+        self.active_tasks: Dict[str, asyncio.Future] = {}
+        self.logger = logging.getLogger(__name__)
+
+    async def submit_video_generation(self, request_id: str, wavespeed_api: 'WavespeedAPI',
+                                    prompt: str, image_url: str, model: str) -> str:
+        """
+        Envía una tarea de generación de video para procesamiento asíncrono
+
+        Returns:
+            request_id: ID de la solicitud para tracking
+        """
+        # Crear tarea asíncrona
+        task = asyncio.get_event_loop().run_in_executor(
+            self.executor,
+            self._process_video_generation_sync,
+            request_id, wavespeed_api, prompt, image_url, model
+        )
+
+        self.active_tasks[request_id] = task
+        self.logger.info(f"🎬 Video task {request_id} submitted to async processor")
+        return request_id
+
+    def _process_video_generation_sync(self, request_id: str, wavespeed_api: 'WavespeedAPI',
+                                     prompt: str, image_url: str, model: str) -> Dict[str, Any]:
+        """
+        Procesamiento síncrono de generación de video (ejecutado en thread pool)
+        """
+        try:
+            self.logger.info(f"🔄 Procesando video {request_id} en thread separado")
+
+            # Generar el video
+            result = wavespeed_api.generate_video(prompt, image_url, model)
+
+            if result.get('data') and result['data'].get('id'):
+                task_id = result['data']['id']
+                self.logger.info(f"✅ Video {request_id} generado exitosamente, task_id: {task_id}")
+                return {
+                    'status': 'success',
+                    'request_id': request_id,
+                    'task_id': task_id,
+                    'result': result
+                }
+            else:
+                raise Exception(f"Respuesta inválida de API: {result}")
+
+        except Exception as e:
+            self.logger.error(f"❌ Error procesando video {request_id}: {e}")
+            return {
+                'status': 'error',
+                'request_id': request_id,
+                'error': str(e)
+            }
+
+    async def wait_for_completion(self, request_id: str, timeout: int = 300) -> Optional[Dict[str, Any]]:
+        """
+        Espera a que se complete una tarea de generación de video
+
+        Args:
+            request_id: ID de la solicitud
+            timeout: Timeout en segundos
+
+        Returns:
+            Resultado de la tarea o None si timeout
+        """
+        if request_id not in self.active_tasks:
+            self.logger.error(f"Tarea {request_id} no encontrada")
+            return None
+
+        try:
+            task = self.active_tasks[request_id]
+            result = await asyncio.wait_for(task, timeout=timeout)
+            del self.active_tasks[request_id]
+            return result
+        except asyncio.TimeoutError:
+            self.logger.error(f"Timeout esperando tarea {request_id}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error esperando tarea {request_id}: {e}")
+            return None
+
+    def cancel_task(self, request_id: str) -> bool:
+        """Cancela una tarea activa"""
+        if request_id in self.active_tasks:
+            task = self.active_tasks[request_id]
+            task.cancel()
+            del self.active_tasks[request_id]
+            self.logger.info(f"🛑 Tarea {request_id} cancelada")
+            return True
+        return False
+
+    def get_active_tasks_count(self) -> int:
+        """Retorna el número de tareas activas"""
+        return len(self.active_tasks)
+
+    def cleanup_completed_tasks(self):
+        """Limpia tareas completadas del diccionario"""
+        completed = [rid for rid, task in self.active_tasks.items() if task.done()]
+        for rid in completed:
+            del self.active_tasks[rid]
+        if completed:
+            self.logger.debug(f"🧹 Limpias {len(completed)} tareas completadas")
+
 from PIL import Image
 from config import Config
+
+# Instancia global del procesador asíncrono (inicializada después de importar Config)
+async_video_processor = AsyncVideoProcessor(max_workers=Config.MAX_ASYNC_WORKERS)
 
 # Configuración del logging
 logging.basicConfig(
@@ -42,6 +214,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Inicializar curl_cffi después de definir logger
+_init_curl_cffi()
 
 # Prompt por defecto cuando no se proporciona caption (configurable via env)
 DEFAULT_PROMPT = os.getenv('DEFAULT_PROMPT', '')
@@ -89,6 +264,70 @@ def save_video_to_volume(video_bytes: bytes, filename: str) -> str:
     logger.info(f"Video guardado en: {filepath}")
     return filepath
 
+def calculate_smart_polling_interval(attempt: int, total_attempts: int, base_interval: float = 0.5) -> float:
+    """
+    Calcula intervalos de polling inteligentes con exponential backoff adaptativo
+
+    Args:
+        attempt: Número de intento actual (0-based)
+        total_attempts: Número total de intentos permitidos
+        base_interval: Intervalo base en segundos
+
+    Returns:
+        Intervalo de polling en segundos
+    """
+    # Estrategia adaptativa:
+    # - Primeros 10 intentos: polling rápido (0.5s) para detectar cambios tempranos
+    # - Intentos 10-30: polling medio (1-2s) con ligero backoff
+    # - Intentos 30+: polling lento (3-5s) con exponential backoff
+
+    if attempt < 10:
+        # Polling rápido inicial para detectar cambios inmediatos
+        return base_interval
+    elif attempt < 30:
+        # Polling medio con backoff lineal
+        return min(base_interval * 2, base_interval + (attempt - 10) * 0.1)
+    else:
+        # Polling lento con exponential backoff
+        # Fórmula: base_interval * 2^(attempt/20) con límite superior
+        backoff_factor = 2 ** ((attempt - 30) / 20)
+        return min(base_interval * 4 * backoff_factor, 10.0)  # Máximo 10 segundos
+
+def cleanup_old_downloads(context, chat_id):
+    """
+    Limpia entradas antiguas de descargas del contexto del usuario para evitar memory leaks
+    """
+    try:
+        # Buscar y eliminar entradas de descargas antiguas (más de 1 hora)
+        import time
+        current_time = time.time()
+        one_hour_ago = current_time - 3600  # 1 hora en segundos
+
+        keys_to_remove = []
+        for key, value in context.user_data.items():
+            if key.startswith('downloaded_'):
+                # Si la entrada no tiene timestamp, asumir que es antigua
+                if isinstance(value, dict) and 'timestamp' in value:
+                    if value['timestamp'] < one_hour_ago:
+                        keys_to_remove.append(key)
+                elif isinstance(value, bool) and value == True:
+                    # Para entradas booleanas simples, considerarlas como antiguas después de cierto tiempo
+                    # Como no tenemos timestamp, las limpiamos después de procesar
+                    keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            del context.user_data[key]
+            logger.debug(f"🧹 Limpiada entrada antigua de descarga: {key}")
+
+        if keys_to_remove:
+            logger.info(f"🧹 Limpieza completada: {len(keys_to_remove)} entradas antiguas eliminadas para chat {chat_id}")
+        else:
+            logger.debug(f"🧹 No hay entradas antiguas para limpiar en chat {chat_id}")
+
+    except Exception as cleanup_error:
+        logger.warning(f"⚠️ Error limpiando descargas antiguas: {cleanup_error}")
+        # No fallar el procesamiento principal por un error de limpieza
+
 class WavespeedAPI:
     def __init__(self):
         self.api_key = Config.WAVESPEED_API_KEY
@@ -98,7 +337,7 @@ class WavespeedAPI:
             'Content-Type': 'application/json'
         }
 
-    def generate_video(self, prompt: str, image_url: str = None, model: str = None) -> dict:
+    def generate_video(self, prompt: str, image_url: str = None, model: str = None, webhook_url: str = None) -> dict:
         """
         Genera un video usando diferentes modelos de Wavespeed AI
 
@@ -106,6 +345,7 @@ class WavespeedAPI:
             prompt: Descripción del video a generar
             image_url: URL de la imagen de referencia (opcional para text-to-video)
             model: Modelo a usar ('ultra_fast', 'fast', 'quality', 'text_to_video')
+            webhook_url: URL de webhook para notificaciones (si soportado por la API)
         """
         if model is None or model not in Config.AVAILABLE_MODELS:
             model = Config.DEFAULT_MODEL
@@ -129,6 +369,11 @@ class WavespeedAPI:
             "negative_prompt": Config.NEGATIVE_PROMPT,
             "seed": -1
         }
+
+        # Agregar webhook si está configurado y soportado por la API
+        if webhook_url:
+            payload["webhook_url"] = webhook_url
+            logger.info(f"Webhook configurado para notificaciones: {webhook_url}")
 
         # Solo incluir imagen si no es text-to-video o si se proporciona
         if image_url and model != 'text_to_video':
@@ -161,13 +406,24 @@ class WavespeedAPI:
             logger.error(f"Error obteniendo estado del video: {e}")
             raise
 
-    def download_video(self, video_url: str, timeout: int = 30) -> bytes:
+    def download_video(self, video_url: str, timeout: int = 30, model: str = 'ultra_fast') -> bytes:
         """
         Descarga el video generado con mejor manejo de errores
+        Ajusta timeout según el modelo para videos de calidad
         """
+        # Ajustar timeout según el modelo
+        if model == 'quality':
+            # Videos 720p necesitan más tiempo (hasta 3 minutos)
+            timeout = max(timeout, 180)  # 3 minutos mínimo
+            logger.info(f"🎯 Video de CALIDAD detectado - Timeout extendido a {timeout} segundos")
+        elif model == 'fast':
+            timeout = max(timeout, 90)  # 1.5 minutos para fast
+        else:
+            timeout = max(timeout, 60)  # 1 minuto para ultra_fast
+
         try:
             logger.info(f"📥 Iniciando descarga de video desde: {video_url[:50]}...")
-            logger.info(f"   Timeout configurado: {timeout} segundos")
+            logger.info(f"   Modelo: {model} | Timeout configurado: {timeout} segundos")
 
             # Hacer la petición con timeout y headers
             headers = {
@@ -196,6 +452,9 @@ class WavespeedAPI:
             # Descargar el contenido
             content = response.content
             logger.info(f"✅ Video descargado exitosamente: {len(content)} bytes")
+
+            # Validaciones exhaustivas del archivo descargado
+            self._validate_video_integrity(content, model)
 
             return content
 
@@ -242,6 +501,47 @@ class WavespeedAPI:
         base_message += "💡 Contacta al administrador si el problema persiste."
 
         return base_message
+
+    def _validate_video_integrity(self, video_bytes: bytes, model: str) -> None:
+        """
+        Valida que el video descargado esté completo y sea válido
+        Realiza validaciones más estrictas para videos de calidad
+        """
+        file_size = len(video_bytes)
+
+        # Validación básica de tamaño mínimo
+        if file_size < 1000:
+            raise ValueError(f"Archivo descargado demasiado pequeño: {file_size} bytes")
+
+        # Validaciones específicas por modelo
+        if model == 'quality':
+            # Videos 720p deben ser más grandes (mínimo ~500KB para videos cortos)
+            min_size_quality = 500 * 1024  # 500KB
+            if file_size < min_size_quality:
+                raise ValueError(f"Video de calidad demasiado pequeño: {file_size:,} bytes (mínimo: {min_size_quality:,} bytes)")
+            logger.info(f"✅ Video de CALIDAD validado: {file_size:,} bytes")
+
+        elif model == 'fast':
+            # Videos fast deben ser razonables (~200KB mínimo)
+            min_size_fast = 200 * 1024  # 200KB
+            if file_size < min_size_fast:
+                raise ValueError(f"Video fast demasiado pequeño: {file_size:,} bytes (mínimo: {min_size_fast:,} bytes)")
+
+        else:
+            # Videos ultra_fast pueden ser más pequeños (~50KB mínimo)
+            min_size_ultra = 50 * 1024  # 50KB
+            if file_size < min_size_ultra:
+                raise ValueError(f"Video ultra_fast demasiado pequeño: {file_size:,} bytes (mínimo: {min_size_ultra:,} bytes)")
+
+        # Validación de firma MP4 básica (primeros bytes)
+        if len(video_bytes) >= 12:
+            # MP4 files typically start with 'ftyp' box after 'moov' or similar
+            # Check for common video file signatures
+            header = video_bytes[:12]
+            if not any(sig in header for sig in [b'ftyp', b'moov', b'mdat', b'free']):
+                logger.warning(f"⚠️  Firma de video no reconocida en header: {header[:8].hex()}")
+
+        logger.info(f"✅ Video validado: {file_size:,} bytes, modelo: {model}")
 
     def generate_text_to_video(self, prompt: str, model: str = 'text_to_video') -> dict:
         """
@@ -305,41 +605,722 @@ class WavespeedAPI:
             logger.error(f"Error obteniendo resultado del prompt optimizer: {e}")
             raise
 
+    def get_balance(self) -> dict:
+        """
+        Consulta el balance/creditos disponibles en la cuenta de Wavespeed
+        Según documentación oficial: GET /api/v3/balance
+        Respuesta: {code: 200, message: "success", data: {balance: X.XX}}
+        """
+        try:
+            # Endpoint oficial según documentación 2026
+            endpoint = '/api/v3/balance'
+            url = f"{self.base_url}{endpoint}"
+
+            logger.info(f"Consultando balance en: {url}")
+
+            response = requests.get(url, headers=self.headers, timeout=10)
+            response.raise_for_status()
+
+            data = response.json()
+            logger.info(f"Respuesta de balance obtenida: {data}")
+
+            # Validar estructura de respuesta según documentación
+            if data.get('code') == 200 and data.get('message') == 'success':
+                balance_data = data.get('data', {})
+                balance = balance_data.get('balance')
+
+                if balance is not None:
+                    logger.info(f"Balance obtenido exitosamente: ${balance}")
+                    return {
+                        'success': True,
+                        'balance': balance,
+                        'currency': 'USD',
+                        'raw_response': data
+                    }
+                else:
+                    logger.warning("Balance no encontrado en respuesta")
+                    return {
+                        'error': 'Balance not found',
+                        'message': 'El balance no está disponible en la respuesta',
+                        'raw_response': data
+                    }
+            else:
+                # Respuesta con código de error
+                error_code = data.get('code', 'unknown')
+                error_message = data.get('message', 'unknown error')
+                logger.warning(f"Error en respuesta de balance: {error_code} - {error_message}")
+                return {
+                    'error': f'API Error {error_code}',
+                    'message': error_message,
+                    'raw_response': data
+                }
+
+        except requests.exceptions.HTTPError as e:
+            error_code = e.response.status_code
+            try:
+                error_data = e.response.json()
+                error_message = error_data.get('message', 'HTTP Error')
+            except:
+                error_message = str(e)
+
+            logger.error(f"Error HTTP consultando balance ({error_code}): {error_message}")
+            return {
+                'error': f'HTTP {error_code}',
+                'message': error_message,
+                'http_status': error_code
+            }
+
+        except requests.exceptions.Timeout:
+            logger.error("Timeout consultando balance")
+            return {
+                'error': 'Timeout',
+                'message': 'La consulta de balance tardó demasiado tiempo'
+            }
+
+        except requests.exceptions.ConnectionError:
+            logger.error("Error de conexión consultando balance")
+            return {
+                'error': 'Connection Error',
+                'message': 'No se pudo conectar al servidor de Wavespeed'
+            }
+
+        except Exception as e:
+            logger.error(f"Error crítico consultando balance: {e}")
+            return {
+                'error': str(type(e).__name__),
+                'message': f'Error interno: {str(e)}'
+            }
 
     def get_available_models(self) -> dict:
         """
         Retorna información sobre los modelos disponibles
         """
         return {
+            # Modelos gratuitos / básicos
             'ultra_fast': {
-                'name': 'Ultra Fast 480p',
+                'name': '⚡ Ultra Fast 480p',
                 'description': 'Video rápido en 480p, duración máxima 8s',
                 'duration_max': 8,
                 'resolution': '480p',
-                'speed': 'ultra_fast'
+                'speed': 'ultra_fast',
+                'tier': 'free',
+                'cost': 0.05
             },
             'fast': {
-                'name': 'Fast 480p',
+                'name': '🚀 Fast 480p',
                 'description': 'Video rápido en 480p con mejor calidad',
                 'duration_max': 8,
                 'resolution': '480p',
-                'speed': 'fast'
+                'speed': 'fast',
+                'tier': 'free',
+                'cost': 0.08
             },
             'quality': {
-                'name': 'Quality 720p',
+                'name': '🎬 Quality 720p',
                 'description': 'Video de alta calidad en 720p',
                 'duration_max': 8,
                 'resolution': '720p',
-                'speed': 'quality'
+                'speed': 'quality',
+                'tier': 'free',
+                'cost': 0.12
             },
             'text_to_video': {
-                'name': 'Text to Video 480p',
+                'name': '📝 Text to Video 480p',
                 'description': 'Genera video solo desde texto (sin imagen)',
                 'duration_max': 8,
                 'resolution': '480p',
-                'speed': 'ultra_fast'
+                'speed': 'ultra_fast',
+                'tier': 'free',
+                'cost': 0.07
+            },
+
+            # 🎬 MODELOS PREMIUM PROPUESTA 1: CINEMÁTICO PROFESIONAL
+            'cinematic_1080p': {
+                'name': '🎥 Cinematic 1080p PRO',
+                'description': 'Videos cinematográficos profesionales en FullHD',
+                'duration_max': 15,
+                'resolution': '1080p',
+                'speed': 'premium',
+                'tier': 'premium',
+                'cost': 0.50,
+                'features': ['professional_lighting', 'cinematic_angles', '4k_upscale']
+            },
+            'stylized_art': {
+                'name': '🎨 Stylized Art 720p',
+                'description': 'Videos con estilos artísticos únicos y creativos',
+                'duration_max': 12,
+                'resolution': '720p',
+                'speed': 'premium',
+                'tier': 'premium',
+                'cost': 0.35,
+                'features': ['art_styles', 'color_grading', 'creative_effects']
+            },
+
+            # 🎭 MODELOS PREMIUM PROPUESTA 2: ANIMACIÓN AVANZADA
+            'animation_4k': {
+                'name': '🎭 Animation 4K Ultra',
+                'description': 'Animaciones de ultra alta calidad en 4K',
+                'duration_max': 10,
+                'resolution': '4K',
+                'speed': 'premium',
+                'tier': 'premium',
+                'cost': 0.75,
+                'features': ['4k_animation', 'smooth_motion', 'particle_effects']
+            },
+            'music_video': {
+                'name': '🎵 Music Video 1080p',
+                'description': 'Videos sincronizados automáticamente con beats musicales',
+                'duration_max': 20,
+                'resolution': '1080p',
+                'speed': 'premium',
+                'tier': 'premium',
+                'cost': 0.60,
+                'features': ['music_sync', 'beat_matching', 'audio_reactive']
+            },
+
+            # 🎬 MODELOS PREMIUM PROPUESTA 3: VIDEOS LARGOS
+            'long_video_60s': {
+                'name': '📚 Long Video 60s Extended',
+                'description': 'Videos narrativos largos de hasta 60 segundos',
+                'duration_max': 60,
+                'resolution': '720p',
+                'speed': 'extended',
+                'tier': 'premium',
+                'cost': 1.00,
+                'features': ['narrative_flow', 'scene_transitions', 'extended_duration']
+            },
+            'educational': {
+                'name': '📖 Educational Content 720p',
+                'description': 'Contenido educativo optimizado para aprendizaje',
+                'duration_max': 45,
+                'resolution': '720p',
+                'speed': 'educational',
+                'tier': 'premium',
+                'cost': 0.80,
+                'features': ['clear_narration', 'educational_style', 'information_density']
+            },
+            'documentary': {
+                'name': '🎥 Documentary 1080p',
+                'description': 'Estilo documental profesional para contenido serio',
+                'duration_max': 30,
+                'resolution': '1080p',
+                'speed': 'premium',
+                'tier': 'premium',
+                'cost': 0.90,
+                'features': ['documentary_style', 'professional_audio', 'narrative_depth']
             }
         }
+
+
+class VideoDownloader:
+    """Clase para descargar videos de redes sociales"""
+
+    SUPPORTED_PLATFORMS = {
+        'facebook.com': 'Facebook',
+        'fb.com': 'Facebook',
+        'instagram.com': 'Instagram',
+        'instagr.am': 'Instagram',
+        'twitter.com': 'X (Twitter)',
+        'x.com': 'X (Twitter)',
+        'reddit.com': 'Reddit',
+        'tiktok.com': 'TikTok',
+        'vm.tiktok.com': 'TikTok'
+    }
+
+    def __init__(self):
+        self.temp_dir = Config.VOLUME_PATH
+
+    def detect_platform(self, url: str) -> str:
+        """Detecta la plataforma de redes sociales desde la URL"""
+        try:
+            domain = urlparse(url).netloc.lower()
+            for platform_domain, platform_name in self.SUPPORTED_PLATFORMS.items():
+                if platform_domain in domain:
+                    return platform_name
+            return None
+        except Exception as e:
+            logger.error(f"Error detectando plataforma para URL {url}: {e}")
+            return None
+
+    def is_valid_social_url(self, url: str) -> bool:
+        """Verifica si la URL es de una red social soportada"""
+        platform = self.detect_platform(url)
+        return platform is not None
+
+    def download_video_curl_cffi(self, url: str, platform: str) -> dict:
+        """
+        Descarga un video usando curl_cffi con impersonación de navegador
+        Método principal para todas las plataformas soportadas
+        """
+        if not CURL_CFFI_AVAILABLE:
+            return {
+                'success': False,
+                'error': 'curl_cffi no disponible'
+            }
+
+        try:
+            logger.info(f"🔧 Intentando descarga con curl_cffi para {platform}")
+
+            # Configuración específica por plataforma
+            impersonate_target = "chrome124"  # Chrome moderno por defecto
+
+            if platform == 'TikTok':
+                # TikTok funciona mejor con Safari iOS
+                impersonate_target = "safari18_ios"
+            elif platform in ['Facebook', 'Instagram']:
+                # Facebook/Instagram funcionan bien con Chrome
+                impersonate_target = "chrome124"
+
+            # Headers adicionales para mejor impersonación
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            }
+
+            # Primera petición para obtener información del video
+            logger.info(f"🌐 Consultando URL con impersonación: {impersonate_target}")
+            response = curl_requests.get(
+                url,
+                impersonate=impersonate_target,
+                headers=headers,
+                timeout=30,
+                allow_redirects=True
+            )
+
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f'Error HTTP {response.status_code}: {response.text[:100]}...'
+                }
+
+            # Buscar URLs de video en la respuesta (JSON o HTML)
+            content = response.text
+
+            # Lógica específica por plataforma para extracción de datos
+            if platform == 'TikTok':
+                # Buscar patrones comunes de URLs de video en TikTok
+                video_patterns = [
+                    r'"playAddr":"([^"]+)"',
+                    r'"downloadAddr":"([^"]+)"',
+                    r'playAddr["\s]*:[\s]*"([^"]+)"',
+                    r'https://v\d+\.ttcdn\.cn[^"\s]+',
+                    r'https://v\d+\.bytecdn\.cn[^"\s]+'
+                ]
+
+                video_url = None
+                for pattern in video_patterns:
+                    match = re.search(pattern, content)
+                    if match:
+                        video_url = match.group(1).replace('\\u0026', '&').replace('\\', '')
+                        if video_url.startswith('http'):
+                            logger.info(f"🎥 URL de video encontrada: {video_url[:100]}...")
+                            break
+
+                if not video_url:
+                    return {
+                        'success': False,
+                        'error': 'No se pudo encontrar la URL del video en la respuesta de TikTok'
+                    }
+
+                # Descargar el video real
+                logger.info("📥 Descargando video desde URL encontrada")
+                video_response = curl_requests.get(
+                    video_url,
+                    impersonate=impersonate_target,
+                    headers=headers,
+                    timeout=60
+                )
+
+                if video_response.status_code != 200:
+                    return {
+                        'success': False,
+                        'error': f'Error descargando video: HTTP {video_response.status_code}'
+                    }
+
+                # Extraer metadatos del JSON de TikTok
+                title = "TikTok Video"
+                duration = 0
+
+                # Buscar título en el JSON
+                title_patterns = [
+                    r'"desc":"([^"]+)"',
+                    r'"text":"([^"]+)"',
+                    r'title["\s]*:[\s]*"([^"]+)"'
+                ]
+
+                for pattern in title_patterns:
+                    match = re.search(pattern, content)
+                    if match:
+                        title = match.group(1).replace('\\n', ' ').strip()
+                        break
+
+                # Guardar el video
+                video_bytes = video_response.content
+                file_size = len(video_bytes)
+
+                # Validar tamaño mínimo
+                if file_size < 10000:  # 10KB mínimo
+                    return {
+                        'success': False,
+                        'error': f'Video descargado demasiado pequeño: {file_size} bytes'
+                    }
+
+                video_filename = generate_serial_filename("tiktok_curl", "mp4")
+                video_filepath = save_video_to_volume(video_bytes, video_filename)
+
+                return {
+                    'success': True,
+                    'filepath': video_filepath,
+                    'title': title,
+                    'duration': duration,
+                    'platform': platform,
+                    'file_size': file_size,
+                    'method': 'curl_cffi'
+                }
+
+            else:
+                # Para otras plataformas (Facebook, Instagram, etc.), intentar descarga directa
+                logger.info(f"🎯 Intentando descarga directa para {platform}")
+
+                # Para estas plataformas, la URL directa debería funcionar
+                video_response = curl_requests.get(
+                    url,
+                    impersonate=impersonate_target,
+                    headers=headers,
+                    timeout=60,
+                    allow_redirects=True
+                )
+
+                if video_response.status_code != 200:
+                    return {
+                        'success': False,
+                        'error': f'Error accediendo a {platform}: HTTP {video_response.status_code}'
+                    }
+
+                # Verificar si la respuesta contiene un video
+                content_type = video_response.headers.get('content-type', '').lower()
+
+                # Si es un video directo, guardarlo
+                if 'video/' in content_type or 'mp4' in content_type:
+                    video_bytes = video_response.content
+                    file_size = len(video_bytes)
+
+                    if file_size < 10000:  # 10KB mínimo
+                        return {
+                            'success': False,
+                            'error': f'Contenido descargado demasiado pequeño: {file_size} bytes'
+                        }
+
+                    # Extraer título del URL o usar genérico
+                    title = f"{platform} Video"
+                    duration = 0  # No podemos determinar duración sin metadata
+
+                    video_filename = generate_serial_filename(f"{platform.lower().replace(' ', '_')}_curl", "mp4")
+                    video_filepath = save_video_to_volume(video_bytes, video_filename)
+
+                    return {
+                        'success': True,
+                        'filepath': video_filepath,
+                        'title': title,
+                        'duration': duration,
+                        'platform': platform,
+                        'file_size': file_size,
+                        'method': 'curl_cffi'
+                    }
+
+                else:
+                    # No es un video directo, probablemente una página HTML
+                    # Esto requiere parsing más complejo que yt-dlp maneja mejor
+                    return {
+                        'success': False,
+                        'error': f'{platform} requiere parsing HTML complejo, usar yt-dlp'
+                    }
+
+        except Exception as e:
+            logger.error(f"Error en curl_cffi para {platform}: {e}")
+            return {
+                'success': False,
+                'error': f'Error con curl_cffi: {str(e)}'
+            }
+
+    def download_video(self, url: str) -> dict:
+        """
+        Descarga un video de redes sociales usando curl_cffi (primer método) con fallback a yt-dlp
+
+        Returns:
+            dict: {
+                'success': bool,
+                'filepath': str (si éxito),
+                'title': str,
+                'duration': int,
+                'platform': str,
+                'method': str,  # 'curl_cffi' o 'yt-dlp'
+                'error': str (si fallo)
+            }
+        """
+        try:
+            platform = self.detect_platform(url)
+            if not platform:
+                return {
+                    'success': False,
+                    'error': 'Plataforma no soportada. Solo Facebook, Instagram, X/Twitter, Reddit y TikTok.'
+                }
+
+            logger.info(f"📥 Descargando video de {platform}: {url}")
+
+            # Usar curl_cffi como primer método si está disponible
+            if CURL_CFFI_AVAILABLE:
+                logger.info("🎯 Intentando curl_cffi como primer método")
+                curl_result = self.download_video_curl_cffi(url, platform)
+                if curl_result['success']:
+                    logger.info("✅ curl_cffi funcionó exitosamente")
+                    return curl_result
+                else:
+                    logger.warning(f"⚠️ curl_cffi falló: {curl_result.get('error', 'Unknown error')}")
+                    logger.info("🔄 Intentando con yt-dlp (con impersonation avanzada) como fallback")
+
+            # Si curl_cffi no está disponible o falló, usar yt-dlp con impersonation
+
+            # Fallback a yt-dlp
+            video_id = str(uuid.uuid4())[:8]
+            output_template = os.path.join(self.temp_dir, f'social_video_{video_id}.%(ext)s')
+
+            # Comando yt-dlp optimizado para videos sociales
+            cmd = [
+                'yt-dlp',
+                '--no-check-certificates',
+                '--no-playlist',
+                '--max-filesize', '100M',  # Límite de 100MB
+                '--format', 'best[height<=720]',  # Calidad máxima 720p
+                '--output', output_template,
+                '--print', '%(title)s',
+                '--print', '%(duration)s',
+                '--print', '%(ext)s',
+            ]
+
+            # Configuración para yt-dlp con impersonation avanzada
+            # Necesaria para plataformas modernas que bloquean requests simples
+            cmd.extend([
+                '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+                '--add-header', 'Accept-Language: en-US,en;q=0.9',
+                '--add-header', 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                '--add-header', 'Sec-Ch-Ua-Mobile: ?1',
+                '--add-header', 'Sec-Ch-Ua-Platform: "iOS"',
+            ])
+
+            # Configuración de impersonation específica por plataforma
+            if platform == 'TikTok':
+                # Usar impersonation de Safari iOS para TikTok
+                cmd.extend([
+                    '--impersonate', 'safari-ios:17.5.1',
+                    '--add-header', 'Referer: https://www.tiktok.com/',
+                    '--add-header', 'Sec-Fetch-Dest: document',
+                    '--add-header', 'Sec-Fetch-Mode: navigate',
+                    '--add-header', 'Sec-Fetch-Site: none',
+                ])
+            elif platform == 'Instagram':
+                # Usar impersonation de Safari iOS para Instagram
+                cmd.extend([
+                    '--impersonate', 'safari-ios:17.5.1',
+                    '--add-header', 'Referer: https://www.instagram.com/',
+                    '--add-header', 'X-Requested-With: XMLHttpRequest',
+                ])
+            elif platform == 'Facebook':
+                # Usar impersonation de Chrome para Facebook
+                cmd.extend([
+                    '--impersonate', 'chrome-120',
+                    '--add-header', 'Referer: https://www.facebook.com/',
+                ])
+            elif platform == 'X/Twitter':
+                # Usar impersonation de Safari para Twitter/X
+                cmd.extend([
+                    '--impersonate', 'safari-17',
+                    '--add-header', 'Referer: https://twitter.com/',
+                    '--add-header', 'Authorization: Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
+                ])
+            elif platform == 'Reddit':
+                # Usar impersonation básica para Reddit
+                cmd.extend([
+                    '--impersonate', 'chrome-120',
+                    '--add-header', 'Referer: https://www.reddit.com/',
+                ])
+
+            # Agregar la URL al final
+            cmd.append(url)
+
+            logger.info(f"Ejecutando comando: {' '.join(cmd)}")
+
+            # Ejecutar yt-dlp
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120  # 2 minutos timeout
+            )
+
+            if result.returncode != 0:
+                logger.error(f"Error en yt-dlp: {result.stderr}")
+
+                # Intentar con configuración básica si la impersonation falló
+                if 'impersonate' in ' '.join(cmd) and 'no impersonate target is available' in result.stderr:
+                    logger.info("🔄 Intentando con configuración básica (sin impersonation) como último recurso")
+                    basic_cmd = [
+                        'yt-dlp',
+                        '--no-check-certificates',
+                        '--no-playlist',
+                        '--max-filesize', '50M',  # Reducir límite para videos más pequeños
+                        '--format', 'best[height<=480]',  # Calidad más baja
+                        '--output', output_template,
+                        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        '--add-header', 'Accept-Language: en-US,en;q=0.9',
+                        url
+                    ]
+
+                    basic_result = subprocess.run(
+                        basic_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=60  # Timeout más corto
+                    )
+
+                    if basic_result.returncode == 0:
+                        logger.info("✅ Configuración básica funcionó como último recurso")
+                        # Procesar resultado exitoso
+                        lines = basic_result.stdout.strip().split('\n')
+                        if len(lines) >= 3:
+                            title = lines[0] if lines[0] else f"Video de {platform}"
+                            duration = int(float(lines[1])) if lines[1].isdigit() else 0
+                            ext = lines[2] if lines[2] else 'mp4'
+
+                            # Encontrar el archivo descargado
+                            for file in os.listdir(self.temp_dir):
+                                if file.startswith(f'social_video_{video_id}') and file.endswith(f'.{ext}'):
+                                    filepath = os.path.join(self.temp_dir, file)
+                                    file_size = os.path.getsize(filepath)
+
+                                    return {
+                                        'success': True,
+                                        'filepath': filepath,
+                                        'title': title,
+                                        'duration': duration,
+                                        'platform': platform,
+                                        'method': 'yt-dlp-basic',
+                                        'file_size': file_size
+                                    }
+
+                # Si todo falló
+                error_msg = result.stderr[:200] + "..." if len(result.stderr) > 200 else result.stderr
+                return {
+                    'success': False,
+                    'error': f'Error descargando video: {error_msg}\n\n💡 También puedes usar /download [URL] para intentar manualmente.'
+                }
+
+            # Parsear la salida
+            output_lines = result.stdout.strip().split('\n')
+            if len(output_lines) < 3:
+                return {
+                    'success': False,
+                    'error': 'No se pudo obtener información del video'
+                }
+
+            title = output_lines[0].strip()
+            duration_str = output_lines[1].strip()
+            extension = output_lines[2].strip()
+
+            try:
+                duration = int(float(duration_str))
+            except:
+                duration = 0
+
+            # Encontrar el archivo descargado
+            video_filename = f'social_video_{video_id}.{extension}'
+            video_filepath = os.path.join(self.temp_dir, video_filename)
+
+            if not os.path.exists(video_filepath):
+                return {
+                    'success': False,
+                    'error': 'Video descargado pero archivo no encontrado'
+                }
+
+            # Verificar tamaño del archivo
+            file_size = os.path.getsize(video_filepath)
+            logger.info(f"✅ Video descargado: {video_filepath} ({file_size:,} bytes)")
+
+            return {
+                'success': True,
+                'filepath': video_filepath,
+                'title': title,
+                'duration': duration,
+                'platform': platform,
+                'file_size': file_size
+            }
+
+        except subprocess.TimeoutExpired:
+            logger.error("Timeout descargando video")
+            return {
+                'success': False,
+                'error': 'Timeout: La descarga tomó demasiado tiempo (máx 2 minutos)'
+            }
+
+        except subprocess.TimeoutExpired:
+            logger.error("Timeout descargando video de red social")
+            return {
+                'success': False,
+                'error': 'Timeout: La descarga tomó demasiado tiempo (máx 2 minutos). El video puede ser muy largo o el servidor está lento.'
+            }
+
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr.strip() if e.stderr else str(e)
+
+            # Mensajes de error más específicos
+            if 'Video unavailable' in error_msg or 'not available' in error_msg:
+                error = 'Video no disponible: El video puede haber sido eliminado o ser privado.'
+            elif 'Unsupported URL' in error_msg:
+                error = 'URL no soportada: Verifica que la URL sea correcta.'
+            elif 'Private video' in error_msg:
+                error = 'Video privado: No se puede acceder a videos privados.'
+            elif 'Age-restricted' in error_msg:
+                error = 'Video con restricción de edad: No se puede descargar contenido con restricción de edad.'
+            elif 'Geo-blocked' in error_msg:
+                error = 'Video geo-bloqueado: El contenido no está disponible en tu región.'
+            elif 'impersonat' in error_msg.lower():
+                error = 'Error de acceso: Problema técnico con la plataforma. Inténtalo más tarde.'
+            else:
+                error = f'Error de descarga: {error_msg[:150]}...'
+
+            logger.error(f"Error en yt-dlp: {error_msg}")
+            return {
+                'success': False,
+                'error': error,
+                'platform': platform
+            }
+
+        except Exception as e:
+            logger.error(f"Error crítico descargando video: {e}")
+            return {
+                'success': False,
+                'error': f'Error interno: {str(e)}'
+            }
+
+    def cleanup_file(self, filepath: str) -> bool:
+        """Elimina un archivo del sistema de archivos"""
+        try:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                logger.info(f"🗑️ Archivo eliminado: {filepath}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error eliminando archivo {filepath}: {e}")
+            return False
+
+
+# Instancia global del downloader
+video_downloader = VideoDownloader()
 
 def optimize_user_prompt_v3(image_url: str, text: str, mode: str = "video", style: str = "default") -> str:
     """
@@ -451,14 +1432,18 @@ def is_image_message(message) -> tuple[bool, str, str]:
         # Es un forward de una foto, pero no tenemos acceso directo a la foto
         return False, "", "❌ Para forwards de fotos, reenvía la imagen con el caption incluido."
 
-    # Si no se detectó ninguna imagen
+            # Si no se detectó ninguna imagen
     return False, "", (
         "❌ No se detectó ninguna imagen en tu mensaje.\n\n"
         "📸 **Formatos aceptados:**\n"
-        "• Fotos (directamente desde la cámara/galería)\n"
-        "• Documentos de imagen (JPG, PNG, WebP, GIF)\n"
-        "• Stickers estáticos\n\n"
-        "💡 Asegúrate de incluir un **caption descriptivo** con tu imagen."
+        "• **Fotos:** JPG, PNG, WebP, GIF (desde galería/cámara)\n"
+        "• **Documentos:** JPG, PNG, WebP, GIF, BMP, TIFF, HEIC, HEIF, SVG\n"
+        "• **Stickers:** Estáticos (no animados)\n\n"
+        "💡 **Tips para archivos:**\n"
+        "• Si envías como documento, asegúrate que tenga extensión de imagen\n"
+        "• Prueba reenviando la imagen como foto en lugar de documento\n"
+        "• Usa `/debugfiles` para más información\n\n"
+        "🎯 Incluye un **caption descriptivo** con tu imagen."
     )
 
 async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYPE, image_type: str = "photo") -> None:
@@ -472,6 +1457,25 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             return
 
         user_id = message.from_user.id if message.from_user else "unknown"
+
+        # Logging detallado del mensaje recibido
+        logger.info(f"🎯 Procesando mensaje de tipo: {image_type}")
+        logger.info(f"   Usuario: {user_id}")
+        logger.info(f"   Tiene photo: {message.photo is not None}")
+        logger.info(f"   Tiene document: {message.document is not None}")
+        logger.info(f"   Tiene sticker: {message.sticker is not None}")
+
+        if message.document:
+            logger.info(f"   Document - MIME: {message.document.mime_type}, Filename: {message.document.file_name}")
+        if message.photo:
+            logger.info(f"   Photo - Cantidad de tamaños: {len(message.photo) if message.photo else 0}")
+        if message.sticker:
+            logger.info(f"   Sticker - Animado: {message.sticker.is_animated if message.sticker else 'N/A'}")
+
+        if message.caption:
+            logger.info(f"   Caption presente: '{message.caption[:50]}...'")
+        else:
+            logger.info(f"   Sin caption")
         chat_id = message.chat.id if message.chat else "unknown"
         message_id = message.message_id if hasattr(message, 'message_id') else "unknown"
 
@@ -493,6 +1497,19 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.info(f"🧹 Flag limpiado por autenticación denegada: chat {chat_id}")
             return
 
+        # Validar que DEFAULT_PROMPT esté configurado para casos sin caption
+        if not message.caption and (not DEFAULT_PROMPT or DEFAULT_PROMPT.strip() == ""):
+            logger.warning("❌ Imagen enviada sin caption pero DEFAULT_PROMPT no está configurado")
+            await message.reply_text(
+                "❌ **Error de configuración**\n\n"
+                "Para procesar imágenes sin descripción (caption), es necesario configurar un prompt por defecto.\n\n"
+                "Por favor, contacta al administrador para configurar `DEFAULT_PROMPT` en las variables de entorno."
+            )
+            # Limpiar el flag de procesamiento
+            context.user_data[processing_key] = False
+            logger.info(f"🧹 Flag limpiado por falta de DEFAULT_PROMPT: chat {chat_id}")
+            return
+
         # Determinar el modelo a usar basado en el contexto del usuario
         user_model = context.user_data.get('selected_model', Config.DEFAULT_MODEL)
 
@@ -508,24 +1525,27 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info(f"Imagen recibida - User: {user_id}, Tipo: {media_type}, Modelo: {user_model}, Forward: {bool(message.forward_origin)}, Caption: {bool(message.caption)}")
         logger.info(f"🔄 Iniciando procesamiento para chat {chat_id}, mensaje {message_id}, tipo: {media_type}")
 
+        # Inicializar variables de optimización
+        prompt_optimized = False
+        original_caption = message.caption or ""
+
         # Procesar el prompt con optimización automática
         if not message.caption:
             # Verificar si hay DEFAULT_PROMPT configurado
             if not DEFAULT_PROMPT or DEFAULT_PROMPT.strip() == "":
                 logger.warning("❌ Imagen enviada sin caption y DEFAULT_PROMPT no configurado")
                 await update.message.reply_text(Config.NO_CAPTION_MESSAGE, parse_mode='Markdown')
+                # Limpiar el flag de procesamiento antes de retornar
+                context.user_data[processing_key] = False
+                logger.info(f"🧹 Flag limpiado por falta de DEFAULT_PROMPT: chat {chat_id}")
                 return
 
-            original_caption = ""  # Caption vacío para casos sin caption
             prompt = DEFAULT_PROMPT
             logger.info(f"🔄 Procesando imagen SIN caption - usando DEFAULT_PROMPT (longitud: {len(DEFAULT_PROMPT)} caracteres)")
             logger.info(f"   Prompt preview: {DEFAULT_PROMPT[:100]}...")
         else:
-            original_caption = message.caption
-
             # Verificar si el usuario quiere optimización automática
             auto_optimize_enabled = context.user_data.get('auto_optimize', False)  # Por defecto desactivado
-            prompt_optimized = False
 
             if auto_optimize_enabled and original_caption and len(original_caption.strip()) > 0:
                 try:
@@ -538,7 +1558,18 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                     elif image_type == "document":
                         if not message.document:
                             raise ValueError("No se encontró documento en el mensaje")
-                        photo_file = await context.bot.get_file(message.document.file_id)
+
+                        logger.info(f"📄 Procesando documento de imagen: {message.document.file_name}")
+                        logger.info(f"   MIME type: {message.document.mime_type}")
+                        logger.info(f"   File size: {message.document.file_size} bytes")
+                        logger.info(f"   File ID: {message.document.file_id[:20]}...")
+
+                        try:
+                            photo_file = await context.bot.get_file(message.document.file_id)
+                            logger.info(f"   File path obtenido: {photo_file.file_path[:50]}...")
+                        except Exception as file_error:
+                            logger.error(f"❌ Error obteniendo file del documento: {file_error}")
+                            raise ValueError(f"Error obteniendo archivo del documento: {str(file_error)}")
                     elif image_type == "sticker":
                         if not message.sticker:
                             raise ValueError("No se encontró sticker en el mensaje")
@@ -672,19 +1703,48 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         # Inicializar API de Wavespeed
         wavespeed = WavespeedAPI()
 
-        # Generar video
-        logger.info(f"Generando video con prompt: {prompt[:100]}...")
+        # Usar procesamiento asíncrono inteligente
+        use_async_processing = Config.USE_ASYNC_PROCESSING
 
-        # Llamar a la API con el modelo seleccionado
-        result = wavespeed.generate_video(prompt, photo_file_url, model=user_model)
+        if use_async_processing:
+            logger.info(f"🚀 Usando procesamiento asíncrono inteligente")
 
-        if result.get('data') and result['data'].get('id'):
-            request_id = result['data']['id']
+            # Generar ID único para esta solicitud
+            async_request_id = f"async_{chat_id}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+
+            # Enviar tarea para procesamiento asíncrono
+            await async_video_processor.submit_video_generation(
+                async_request_id, wavespeed, prompt, photo_file_url, user_model
+            )
+
+            # Esperar resultado con timeout inteligente
+            result = await async_video_processor.wait_for_completion(async_request_id, timeout=Config.ASYNC_TASK_TIMEOUT)
+
+            if not result or result.get('status') != 'success':
+                error_msg = result.get('error', 'Error desconocido en procesamiento asíncrono') if result else 'Timeout en procesamiento asíncrono'
+                await processing_msg.edit_text(f"❌ Error en generación asíncrona: {error_msg}")
+                context.user_data[processing_key] = False
+                return
+
+            # Extraer el result de la respuesta asíncrona
+            api_result = result['result']
+        else:
+            # Método tradicional de generación síncrona
+            logger.info(f"🔄 Usando procesamiento síncrono tradicional")
+            logger.info(f"Generando video con prompt: {prompt[:100]}...")
+
+            # Llamar a la API con el modelo seleccionado
+            api_result = wavespeed.generate_video(prompt, photo_file_url, model=user_model)
+
+        if api_result.get('data') and api_result['data'].get('id'):
+            request_id = api_result['data']['id']
             logger.info(f"Task submitted successfully. Request ID: {request_id}")
 
             # Esperar a que se complete con lógica mejorada y robusta
             attempt = 0
             video_sent = False
+            consecutive_errors = 0
+            max_consecutive_errors = 3
 
             while attempt < Config.MAX_POLLING_ATTEMPTS and not video_sent:
                 try:
@@ -703,6 +1763,91 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                     video_url = task_data['outputs'][0]
                                     logger.info(f"Video URL obtained: {video_url}")
 
+                                    # Verificar si ya descargamos este video URL para evitar duplicados
+                                    downloaded_video_key = f"downloaded_{request_id}_{video_url}"
+                                    downloaded_info = context.user_data.get(downloaded_video_key)
+                                    if downloaded_info and isinstance(downloaded_info, dict):
+                                        # Video ya descargado, usar archivo existente
+                                        existing_filepath = downloaded_info.get('filepath')
+                                        if existing_filepath and os.path.exists(existing_filepath):
+                                            logger.info(f"✅ Reutilizando video ya descargado: {existing_filepath}")
+                                            video_filepath = existing_filepath
+
+                                            # Preparar el caption del video con el prompt utilizado
+                                            video_caption = f"🎬 **Prompt utilizado:**\n{prompt}"
+                                            if prompt_optimized:
+                                                video_caption += "\n\n🎨 *Prompt optimizado automáticamente*"
+
+                                            logger.info(f"📝 Caption del video preparado para archivo reutilizado")
+                                            logger.info(f"   Prompt optimizado: {prompt_optimized}")
+
+                                            # Saltar directamente a la lógica de envío
+                                            # Enviar el video desde el archivo guardado con reintentos
+                                            send_attempts = 3  # Máximo 3 intentos para enviar a Telegram
+                                            video_sent_successfully = False
+
+                                            for send_attempt in range(send_attempts):
+                                                try:
+                                                    logger.info(f"📤 Enviando video reutilizado a Telegram (intento {send_attempt + 1}/{send_attempts})")
+                                                    logger.info(f"   Chat ID: {update.effective_chat.id}")
+                                                    logger.info(f"   Video filepath: {video_filepath}")
+                                                    logger.info(f"   Video file exists: {os.path.exists(video_filepath)}")
+                                                    logger.info(f"   Video file size: {os.path.getsize(video_filepath) if os.path.exists(video_filepath) else 'N/A'}")
+
+                                                    with open(video_filepath, 'rb') as video_file:
+                                                        sent_message = await context.bot.send_video(
+                                                            chat_id=update.effective_chat.id,
+                                                            video=video_file,
+                                                            caption=video_caption,
+                                                            supports_streaming=True,
+                                                        )
+
+                                                    video_sent_successfully = True
+                                                    logger.info(f"✅ Video reutilizado enviado exitosamente a Telegram en intento {send_attempt + 1}")
+                                                    break
+
+                                                except Exception as send_error:
+                                                    logger.error(f"❌ Error enviando video reutilizado a Telegram (intento {send_attempt + 1}): {send_error}")
+
+                                                    if send_attempt < send_attempts - 1:
+                                                        wait_time = 2 * (send_attempt + 1)
+                                                        logger.info(f"⏳ Reintentando envío en {wait_time} segundos...")
+                                                        await asyncio.sleep(wait_time)
+                                                    else:
+                                                        logger.error("💥 Todos los intentos de envío fallaron")
+                                                        raise send_error
+
+                                            if video_sent_successfully:
+                                                # Almacenar información del último video procesado para recuperación
+                                                context.user_data['last_video'] = {
+                                                    'filepath': video_filepath,
+                                                    'caption': video_caption,
+                                                    'timestamp': datetime.now().isoformat(),
+                                                    'model': user_model,
+                                                    'request_id': request_id,
+                                                    'prompt_optimized': prompt_optimized,
+                                                    'original_caption': original_caption
+                                                }
+
+                                                # Confirmar envío exitoso
+                                                success_msg = "✅ ¡Video enviado exitosamente!"
+                                                if prompt_optimized:
+                                                    success_msg += "\n\n🎨 Video con prompt optimizado"
+                                                await processing_msg.edit_text(success_msg)
+                                                video_sent = True
+                                                context.user_data[processing_key] = False
+                                                logger.info(f"🧹 Flag limpiado por envío exitoso de video reutilizado: chat {chat_id}")
+                                                return
+
+                                        else:
+                                            logger.warning(f"⚠️ Video marcado como descargado pero archivo no encontrado: {existing_filepath}")
+                                            # Limpiar entrada corrupta y continuar con nueva descarga
+                                            del context.user_data[downloaded_video_key]
+                                    elif downloaded_info:
+                                        logger.warning(f"⚠️ Video URL ya descargado anteriormente: {video_url}")
+                                        logger.info(f"   Intentando nueva descarga para request {request_id}")
+                                        # Continuar con nueva descarga (formato antiguo)
+
                                     try:
                                         # Validar URL antes de descargar
                                         if not video_url or not video_url.startswith('http'):
@@ -711,29 +1856,99 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
                                         logger.info(f"🎬 Iniciando descarga de video (intento {output_check + 1}/5)")
 
-                                        # Descargar el video con validación
-                                        video_bytes = wavespeed.download_video(video_url)
+                                        # Descargar el video con validación (timeout adaptado al modelo)
+                                        video_bytes = wavespeed.download_video(video_url, model=user_model)
+
+                                        # Marcar que descargamos este video URL con información del archivo
+                                        context.user_data[downloaded_video_key] = {
+                                            'timestamp': time.time(),
+                                            'filepath': None  # Se actualizará después de guardar
+                                        }
 
                                         if len(video_bytes) > 1000:  # Verificar que tenga contenido significativo
+                                            logger.info(f"✅ Video descargado correctamente: {len(video_bytes)} bytes")
+
                                             # Generar nombre único para el video y guardarlo en el volumen
                                             video_filename = generate_serial_filename("output", "mp4")
                                             video_filepath = save_video_to_volume(video_bytes, video_filename)
-                                            logger.info(f"Video saved to: {video_filepath}")
+                                            logger.info(f"💾 Video guardado en: {video_filepath}")
+
+                                            # Verificar que el archivo se guardó correctamente
+                                            if not os.path.exists(video_filepath) or os.path.getsize(video_filepath) == 0:
+                                                logger.error(f"❌ Error: Archivo de video no se guardó correctamente: {video_filepath}")
+                                                raise Exception(f"Archivo de video no se guardó correctamente: {video_filepath}")
+
+                                            logger.info(f"✅ Archivo de video verificado: {os.path.getsize(video_filepath)} bytes")
+
+                                            # Actualizar información del archivo descargado
+                                            if context.user_data.get(downloaded_video_key):
+                                                context.user_data[downloaded_video_key]['filepath'] = video_filepath
+                                                logger.debug(f"📝 Actualizada info de descarga para {request_id}")
 
                                             # Preparar el caption del video con el prompt utilizado
                                             video_caption = f"🎬 **Prompt utilizado:**\n{prompt}"
                                             if prompt_optimized:
                                                 video_caption += "\n\n🎨 *Prompt optimizado automáticamente*"
 
-                                            # Enviar el video desde el archivo guardado
-                                            with open(video_filepath, 'rb') as video_file:
-                                                sent_message = await context.bot.send_video(
-                                                    chat_id=update.effective_chat.id,
-                                                    video=video_file,
-                                                    caption=video_caption,
-                                                    supports_streaming=True,
-                                                    parse_mode='Markdown'
-                                                )
+                                            logger.info(f"📝 Caption del video preparado:")
+                                            logger.info(f"   Longitud: {len(video_caption)} caracteres")
+                                            logger.info(f"   Prompt optimizado: {prompt_optimized}")
+                                            logger.info(f"   Original caption presente: {bool(original_caption)}")
+                                            logger.info(f"   Preview: {video_caption[:200]}...")
+
+                                            # Enviar el video desde el archivo guardado con reintentos
+                                            send_attempts = 3  # Máximo 3 intentos para enviar a Telegram
+                                            video_sent_successfully = False
+
+                                            for send_attempt in range(send_attempts):
+                                                try:
+                                                    logger.info(f"📤 Enviando video a Telegram (intento {send_attempt + 1}/{send_attempts})")
+                                                    logger.info(f"   Chat ID: {update.effective_chat.id}")
+                                                    logger.info(f"   Video filepath: {video_filepath}")
+                                                    logger.info(f"   Video file exists: {os.path.exists(video_filepath)}")
+                                                    logger.info(f"   Video file size: {os.path.getsize(video_filepath) if os.path.exists(video_filepath) else 'N/A'}")
+                                                    logger.info(f"   Caption length: {len(video_caption)} chars")
+
+                                                    with open(video_filepath, 'rb') as video_file:
+                                                        sent_message = await context.bot.send_video(
+                                                            chat_id=update.effective_chat.id,
+                                                            video=video_file,
+                                                            caption=video_caption,
+                                                            supports_streaming=True,
+                                                        )
+
+                                                    video_sent_successfully = True
+                                                    logger.info(f"✅ Video enviado exitosamente a Telegram en intento {send_attempt + 1}")
+                                                    logger.info(f"   Message ID enviado: {sent_message.message_id if sent_message else 'N/A'}")
+                                                    break  # Salir del loop si se envió correctamente
+
+                                                except Exception as send_error:
+                                                    logger.error(f"❌ Error enviando video a Telegram (intento {send_attempt + 1}): {send_error}")
+                                                    logger.error(f"   Tipo de error: {type(send_error).__name__}")
+
+                                                    if send_attempt < send_attempts - 1:  # No es el último intento
+                                                        wait_time = 2 * (send_attempt + 1)  # Espera progresiva: 2s, 4s
+                                                        logger.info(f"⏳ Reintentando envío en {wait_time} segundos...")
+                                                        await asyncio.sleep(wait_time)
+                                                    else:
+                                                        # Último intento falló, relanzar el error
+                                                        logger.error("💥 Todos los intentos de envío fallaron")
+                                                        raise send_error
+
+                                            if not video_sent_successfully:
+                                                raise Exception("No se pudo enviar el video a Telegram después de múltiples intentos")
+
+                                            # Almacenar información del último video procesado para recuperación
+                                            context.user_data['last_video'] = {
+                                                'filepath': video_filepath,
+                                                'caption': video_caption,
+                                                'timestamp': datetime.now().isoformat(),
+                                                'model': user_model,
+                                                'request_id': request_id,
+                                                'prompt_optimized': prompt_optimized,
+                                                'original_caption': original_caption
+                                            }
+                                            logger.info(f"💾 Último video almacenado para usuario {user_id}")
 
                                             # Confirmar envío exitoso
                                             success_msg = "✅ ¡Video enviado exitosamente!"
@@ -746,7 +1961,8 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                                             logger.info(f"🧹 Flag limpiado por envío exitoso de video: chat {chat_id}")
                                             return
                                         else:
-                                            logger.warning(f"Downloaded video too small: {len(video_bytes)} bytes")
+                                            logger.warning(f"❌ Video descargado muy pequeño: {len(video_bytes)} bytes - descartando")
+                                            raise Exception(f"Video descargado muy pequeño: {len(video_bytes)} bytes")
 
                                     except Exception as download_error:
                                         logger.error(f"❌ Error descargando video (intento {output_check + 1}/5): {download_error}")
@@ -787,10 +2003,20 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
                 except Exception as polling_error:
                     logger.error(f"Error during polling (attempt {attempt + 1}): {polling_error}")
-                    # No romper el loop, continuar intentando
+                    consecutive_errors += 1
+
+                    # Si hay muchos errores consecutivos, aumentar el intervalo
+                    if consecutive_errors >= max_consecutive_errors:
+                        logger.warning(f"Múltiples errores consecutivos ({consecutive_errors}), aumentando intervalo de polling")
+                        # Resetear contador después de logging
+                        consecutive_errors = max_consecutive_errors - 1
+
+                # Calcular intervalo de polling inteligente
+                polling_interval = calculate_smart_polling_interval(attempt, Config.MAX_POLLING_ATTEMPTS, Config.POLLING_INTERVAL)
+                logger.debug(f"⏱️  Esperando {polling_interval:.1f}s antes del siguiente check (intento {attempt + 1})")
 
                 # Esperar antes del siguiente check
-                time.sleep(Config.POLLING_INTERVAL)
+                time.sleep(polling_interval)
                 attempt += 1
 
             # Si llegamos aquí, agotamos los intentos
@@ -804,8 +2030,10 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
 
         else:
+            logger.error(f"❌ Error al iniciar la generación del video - respuesta inválida de API")
             await processing_msg.edit_text(
-                "❌ Error al iniciar la generación del video."
+                "❌ Error al iniciar la generación del video.\n\n"
+                "Verifica que la API de WaveSpeed esté funcionando correctamente."
             )
 
     except Exception as e:
@@ -814,23 +2042,117 @@ async def handle_image_message(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.error(f"   Chat ID: {chat_id}, Message ID: {message_id}")
         logger.error(f"   Tipo de imagen: {media_type}")
         logger.error(f"   Modelo: {user_model}")
+        logger.error(f"   Tiene caption: {bool(message.caption)}")
+        logger.error(f"   DEFAULT_PROMPT configurado: {bool(DEFAULT_PROMPT and DEFAULT_PROMPT.strip())}")
 
         # Mostrar información adicional si es posible
         if hasattr(e, '__traceback__'):
             import traceback
             logger.error(f"   Traceback completo:\n{traceback.format_exc()}")
 
-        await update.message.reply_text(
-            "❌ Ocurrió un error inesperado. Por favor, inténtalo de nuevo.\n\n"
-            f"**Detalles técnicos:**\n"
-            f"• Error: `{type(e).__name__}`\n"
-            f"• Mensaje: `{str(e)}`\n\n"
-            f"💡 Contacta al administrador si el problema persiste."
-        )
+        try:
+            await update.message.reply_text(
+                "❌ Ocurrió un error inesperado. Por favor, inténtalo de nuevo.\n\n"
+                f"**Detalles técnicos:**\n"
+                f"• Error: `{type(e).__name__}`\n"
+                f"• Mensaje: `{str(e)}`\n\n"
+                f"💡 Contacta al administrador si el problema persiste."
+            )
+        except Exception as reply_error:
+            logger.error(f"❌ Error adicional enviando mensaje de error: {reply_error}")
+            # No podemos hacer mucho más aquí sin arriesgar un loop infinito
     finally:
         # Limpiar el flag de procesamiento
         context.user_data[processing_key] = False
         logger.info(f"✅ Procesamiento finalizado y flag limpiado para chat {chat_id}")
+
+        # Limpiar descargas antiguas del contexto para evitar memory leaks
+        cleanup_old_downloads(context, chat_id)
+
+# Comando para mostrar opciones premium
+async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Muestra las opciones premium disponibles y modelos avanzados
+    """
+    try:
+        user_id = update.effective_user.id if update.effective_user else "unknown"
+
+        # Verificar autenticación si está configurada
+        if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+            await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
+            return
+
+        wavespeed = WavespeedAPI()
+        all_models = wavespeed.get_available_models()
+
+        # Separar modelos por tier
+        free_models = {k: v for k, v in all_models.items() if v.get('tier') == 'free'}
+        premium_models = {k: v for k, v in all_models.items() if v.get('tier') == 'premium'}
+
+        # Crear mensaje premium
+        premium_msg = "🎬 **TELEWAN PREMIUM - Modelos Avanzados** 🎬\n\n"
+        premium_msg += "🚀 **Potencia tu creatividad con modelos profesionales**\n\n"
+
+        # Modelos gratuitos actuales
+        premium_msg += "🆓 **Modelos Gratuitos Actuales:**\n"
+        for model_key, model_info in free_models.items():
+            cost = model_info.get('cost', 0)
+            premium_msg += f"• {model_info['name']} - ${cost:.2f}\n"
+        premium_msg += "\n"
+
+        # Modelos premium - CINEBOT
+        premium_msg += "🎥 **CINEBOT - Videos Cinematográficos:**\n"
+        cine_models = {k: v for k, v in premium_models.items()
+                      if k in ['cinematic_1080p', 'stylized_art']}
+        for model_key, model_info in cine_models.items():
+            cost = model_info.get('cost', 0)
+            features = ', '.join(model_info.get('features', []))
+            premium_msg += f"• {model_info['name']} - ${cost:.2f}\n"
+            premium_msg += f"  _{features}_\n"
+        premium_msg += "\n"
+
+        # Modelos premium - ANIMEBOT
+        premium_msg += "🎭 **ANIMEBOT - Animación & Efectos:**\n"
+        anime_models = {k: v for k, v in premium_models.items()
+                       if k in ['animation_4k', 'music_video']}
+        for model_key, model_info in anime_models.items():
+            cost = model_info.get('cost', 0)
+            features = ', '.join(model_info.get('features', []))
+            premium_msg += f"• {model_info['name']} - ${cost:.2f}\n"
+            premium_msg += f"  _{features}_\n"
+        premium_msg += "\n"
+
+        # Modelos premium - STORYBOT
+        premium_msg += "📚 **STORYBOT - Videos Narrativos:**\n"
+        story_models = {k: v for k, v in premium_models.items()
+                       if k in ['long_video_60s', 'educational', 'documentary']}
+        for model_key, model_info in story_models.items():
+            cost = model_info.get('cost', 0)
+            duration = model_info.get('duration_max', 8)
+            premium_msg += f"• {model_info['name']} - ${cost:.2f} ({duration}s)\n"
+        premium_msg += "\n"
+
+        # Información de precios y suscripciones
+        premium_msg += "💰 **Planes de Suscripción:**\n"
+        premium_msg += "• **Free:** 5 videos/día (modelos básicos)\n"
+        premium_msg += "• **Pro:** $4.99/mes (videos ilimitados básicos)\n"
+        premium_msg += "• **Creator:** $9.99/mes (acceso a modelos premium)\n"
+        premium_msg += "• **Enterprise:** $49.99/mes (API + modelos exclusivos)\n\n"
+
+        premium_msg += "📞 **Contacto:** Para activar premium o más información\n"
+        premium_msg += "💡 **Próximamente:** Modelos premium disponibles en beta\n\n"
+
+        premium_msg += "🎯 Usa `/models` para ver modelos disponibles actualmente"
+
+        await update.message.reply_text(premium_msg, parse_mode='Markdown')
+
+    except Exception as e:
+        logger.error(f"Error en comando premium: {e}")
+        await update.message.reply_text(
+            "❌ Error al mostrar opciones premium.\n\n"
+            f"**Detalles:** {str(e)}\n\n"
+            "Inténtalo de nuevo o contacta al administrador."
+        )
 
 # Funciones wrapper para diferentes tipos de mensajes con imagen
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -856,7 +2178,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     await update.message.reply_text(Config.HELP_MESSAGE, parse_mode='Markdown')
-    await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def list_models_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Muestra los modelos disponibles de Wavespeed AI"""
@@ -922,7 +2243,7 @@ async def handle_text_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             logger.info(f"Text-to-video task submitted. Request ID: {request_id}")
 
             # Esperar y procesar resultado igual que con imágenes
-            await process_video_generation(update, context, processing_msg, wavespeed, request_id, prompt)
+            await process_video_generation(update, context, processing_msg, wavespeed, request_id, prompt, model='text_to_video')
 
         else:
             await processing_msg.edit_text(
@@ -951,6 +2272,11 @@ async def handle_quality_video(update: Update, context: ContextTypes.DEFAULT_TYP
         "🎯 **Modo Calidad Activado** ✨\n\n"
         "Ahora envía una imagen con un caption para generar un video en **720p alta calidad**.\n\n"
         "⚠️ **Nota:** Los videos de alta calidad pueden tomar más tiempo de procesamiento.\n\n"
+        "✅ **Mejoras implementadas:**\n"
+        "• Timeout extendido (3 minutos para descarga)\n"
+        "• Reintentos automáticos en caso de error\n"
+        "• Validación exhaustiva del archivo\n"
+        "• Sistema de recuperación con `/lastvideo`\n\n"
         "💡 Para volver al modo normal, usa `/start` o `/preview`",
         parse_mode='Markdown'
     )
@@ -1009,8 +2335,493 @@ async def handle_optimize(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     logger.info(f"Usuario {user_id} cambió optimización automática a: {new_state}")
 
+async def handle_debug_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador para el comando /debugfiles - diagnosticar tipos de archivos"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
+        return
+
+    supported_info = """
+🔍 **Diagnóstico de Archivos Soportados**
+
+**Formatos de imagen aceptados:**
+• **Como foto directa:** JPG, PNG, WebP, GIF
+• **Como documento:** JPG, PNG, WebP, GIF, BMP, TIFF, HEIC, HEIF, SVG, ICO
+
+**Cómo enviar imágenes:**
+1. **Como foto:** Selecciona desde galería/cámara
+2. **Como archivo:** Adjunta como documento
+
+**Si tu imagen no funciona:**
+• Verifica que sea un formato soportado
+• Intenta reenviarla como foto en lugar de documento
+• Usa /debugfiles para diagnóstico
+
+📝 **Nota:** Los documentos con extensión de imagen (.jpg, .png, etc.) también son aceptados.
+"""
+
+    await update.message.reply_text(supported_info, parse_mode='Markdown')
+    logger.info(f"Usuario {user_id} solicitó diagnóstico de archivos")
+
+async def handle_lastvideo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador para el comando /lastvideo - recuperar el último video procesado"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
+        return
+
+    # Verificar si hay un último video almacenado
+    last_video = context.user_data.get('last_video')
+    if not last_video:
+        await update.message.reply_text(
+            "📭 **No hay videos recientes**\n\n"
+            "No tienes ningún video procesado recientemente para recuperar.\n\n"
+            "💡 **Para recuperar un video:**\n"
+            "1. Envía una imagen con caption\n"
+            "2. Espera a que se procese\n"
+            "3. Si no lo recibes, usa `/lastvideo`",
+            parse_mode='Markdown'
+        )
+        logger.info(f"Usuario {user_id} intentó recuperar video pero no hay ninguno almacenado")
+        return
+
+    try:
+        # Verificar que el archivo aún existe
+        video_filepath = last_video.get('filepath')
+        if not video_filepath or not os.path.exists(video_filepath):
+            await update.message.reply_text(
+                "❌ **Video no encontrado**\n\n"
+                "El archivo del último video ya no está disponible.\n\n"
+                "💡 **Solución:** Procesa una nueva imagen para generar un video fresco.",
+                parse_mode='Markdown'
+            )
+            logger.warning(f"Usuario {user_id} intentó recuperar video pero archivo no existe: {video_filepath}")
+            return
+
+        # Preparar información del video
+        timestamp = last_video.get('timestamp', 'desconocido')
+        model = last_video.get('model', 'desconocido')
+        prompt_optimized = last_video.get('prompt_optimized', False)
+        original_caption = last_video.get('original_caption', 'sin caption')
+        request_id = last_video.get('request_id', 'desconocido')
+
+        # Preparar caption con información adicional
+        recovery_caption = f"🔄 **Video Recuperado**\n\n"
+        recovery_caption += f"📅 **Procesado:** {timestamp}\n"
+        recovery_caption += f"🎬 **Modelo:** {model}\n"
+        recovery_caption += f"🆔 **ID:** `{request_id[:8]}...`\n"
+
+        if prompt_optimized:
+            recovery_caption += f"🎨 **Optimizado:** Sí\n"
+            recovery_caption += f"📝 **Original:** {original_caption}\n\n"
+        else:
+            recovery_caption += f"🎨 **Optimizado:** No\n\n"
+
+        recovery_caption += f"💡 **Nota:** Este es el último video que procesaste."
+
+        # Enviar el video recuperado
+        with open(video_filepath, 'rb') as video_file:
+            await context.bot.send_video(
+                chat_id=update.effective_chat.id,
+                video=video_file,
+                caption=recovery_caption,
+                supports_streaming=True,
+                parse_mode='Markdown'
+            )
+
+        await update.message.reply_text(
+            "✅ **Video recuperado exitosamente** ✨\n\n"
+            "El último video procesado ha sido reenviado.",
+            parse_mode='Markdown'
+        )
+
+        logger.info(f"Usuario {user_id} recuperó exitosamente el último video: {video_filepath}")
+
+    except Exception as e:
+        logger.error(f"Error recuperando último video para usuario {user_id}: {e}")
+        await update.message.reply_text(
+            "❌ **Error recuperando video**\n\n"
+            f"Ocurrió un error al intentar recuperar el último video.\n\n"
+            f"**Detalles:** {str(e)}\n\n"
+            f"💡 Inténtalo de nuevo o procesa una nueva imagen.",
+            parse_mode='Markdown'
+        )
+
+async def handle_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador para el comando /balance - consultar balance de Wavespeed"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
+        return
+
+    try:
+        # Enviar mensaje de procesamiento
+        processing_msg = await update.message.reply_text(
+            "💰 **Consultando balance...**\n\n"
+            "🔄 Obteniendo información de tu cuenta Wavespeed.",
+            parse_mode='Markdown'
+        )
+
+        # Consultar balance usando la API
+        wavespeed = WavespeedAPI()
+        balance_data = wavespeed.get_balance()
+
+        # Procesar respuesta según nueva estructura
+        if balance_data.get('success'):
+            # Respuesta exitosa
+            balance = balance_data.get('balance')
+            currency = balance_data.get('currency', 'USD')
+
+            balance_info = "💰 **Balance de Wavespeed**\n\n"
+
+            if isinstance(balance, (int, float)):
+                balance_info += f"**Saldo actual:** ${balance:.2f} {currency}\n"
+            else:
+                balance_info += f"**Saldo actual:** {balance}\n"
+
+            # Agregar información adicional si está disponible
+            raw_response = balance_data.get('raw_response', {})
+            if 'data' in raw_response and isinstance(raw_response['data'], dict):
+                data = raw_response['data']
+                if 'credits' in data:
+                    credits = data['credits']
+                    balance_info += f"**Créditos disponibles:** {credits:,}\n"
+                if 'usage' in data:
+                    usage = data['usage']
+                    balance_info += f"**Uso del mes:** {usage}\n"
+                if 'plan' in data:
+                    plan = data['plan']
+                    balance_info += f"**Plan:** {plan}\n"
+
+            balance_info += f"\n📊 **Estado:** Operativo ✅\n"
+            balance_info += f"🔄 **Última consulta:** {datetime.now().strftime('%H:%M:%S')}"
+
+            await processing_msg.edit_text(balance_info, parse_mode='Markdown')
+            logger.info(f"Balance consultado exitosamente para usuario {user_id}: ${balance} {currency}")
+
+        else:
+            # Error en la consulta
+            error_type = balance_data.get('error', 'Unknown error')
+            error_msg = balance_data.get('message', 'Error desconocido')
+
+            await processing_msg.edit_text(
+                f"❌ **Error consultando balance**\n\n"
+                f"**Tipo de error:** {error_type}\n"
+                f"**Detalles:** {error_msg}\n\n"
+                f"💡 Si el problema persiste, contacta al administrador.",
+                parse_mode='Markdown'
+            )
+            logger.warning(f"Error consultando balance para usuario {user_id}: {error_type} - {error_msg}")
+
+    except Exception as e:
+        logger.error(f"Error crítico en comando /balance para usuario {user_id}: {e}")
+        try:
+            await processing_msg.edit_text(
+                "❌ **Error interno**\n\n"
+                f"Ocurrió un error procesando tu solicitud.\n\n"
+                f"**Detalles técnicos:** {str(e)}\n\n"
+                f"💡 Inténtalo de nuevo en unos minutos.",
+                parse_mode='Markdown'
+            )
+        except:
+            # Fallback si no se puede editar el mensaje
+            await update.message.reply_text(
+                "❌ **Error consultando balance**\n\n"
+                "Hubo un problema técnico. Inténtalo de nuevo.",
+                parse_mode='Markdown'
+            )
+
+async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador para el comando /download - descargar videos de redes sociales"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        await update.message.reply_text(Config.ACCESS_DENIED_MESSAGE)
+        return
+
+    # Verificar que se proporcionó una URL
+    if not context.args:
+        await update.message.reply_text(
+            "❌ **Uso incorrecto**\n\n"
+            "💡 **Uso correcto:** `/download [URL]`\n\n"
+            "**Ejemplos:**\n"
+            "`/download https://www.instagram.com/p/ABC123/`\n"
+            "`/download https://twitter.com/user/status/123`\n"
+            "`/download https://www.facebook.com/watch?v=456`\n"
+            "`/download https://reddit.com/r/videos/comments/789/video/`",
+            parse_mode='Markdown'
+        )
+        return
+
+    url = ' '.join(context.args).strip()
+
+    # Validar que sea una URL
+    if not url.startswith(('http://', 'https://')):
+        await update.message.reply_text(
+            "❌ **URL inválida**\n\n"
+            "La URL debe comenzar con `http://` o `https://`",
+            parse_mode='Markdown'
+        )
+        return
+
+    # Verificar que sea una plataforma soportada
+    if not video_downloader.is_valid_social_url(url):
+        await update.message.reply_text(
+            "❌ **Plataforma no soportada**\n\n"
+            "**Plataformas soportadas:**\n"
+            "• 📘 Facebook\n"
+            "• 📷 Instagram\n"
+            "• 🐦 X (Twitter)\n"
+            "• 🔴 Reddit\n"
+            "• 🎵 TikTok\n\n"
+            "💡 Envía `/download [URL]` con un enlace válido",
+            parse_mode='Markdown'
+        )
+        return
+
+    # Enviar mensaje de procesamiento
+    # Usar formato simple sin Markdown para evitar problemas con URLs
+    processing_msg = await update.message.reply_text(
+        "🎬 Descargando video...\n\n"
+        f"🔗 URL: {url[:50]}{'...' if len(url) > 50 else ''}\n\n"
+        "🔧 Método: curl_cffi (avanzado) + yt-dlp fallback\n"
+        "⏳ Esto puede tomar unos minutos..."
+    )
+
+    try:
+        # Descargar el video
+        logger.info(f"Usuario {user_id} solicitó descarga de: {url}")
+        result = video_downloader.download_video(url)
+
+        if not result['success']:
+            error_msg = result['error']
+
+            # Mensaje más específico para TikTok con información sobre fallback
+            if platform == 'TikTok' and 'impersonat' in error_msg.lower():
+                error_msg = "Error de acceso a TikTok. Se intentó con métodos avanzados pero falló."
+
+            await processing_msg.edit_text(
+                f"❌ **Error descargando video**\n\n"
+                f"**Detalles:** {error_msg}\n\n"
+                f"💡 Verifica que la URL sea correcta y el video esté disponible.\n"
+                f"🔧 Para TikTok, se usan técnicas avanzadas de acceso.",
+                parse_mode='Markdown'
+            )
+            return
+
+        # Información del video descargado
+        video_filepath = result['filepath']
+        title = result.get('title', 'Video sin título')
+        duration = result.get('duration', 0)
+        platform = result.get('platform', 'Desconocido')
+        file_size = result.get('file_size', 0)
+
+        logger.info(f"Video descargado exitosamente: {video_filepath}")
+
+        # Preparar información para enviar
+        # Usar formato simple sin Markdown para evitar problemas con URLs
+        caption = f"🎬 {platform} Video\n\n"
+        caption += f"📹 Título: {title[:100]}{'...' if len(title) > 100 else ''}\n"
+        if duration > 0:
+            caption += f"⏱️ Duración: {duration}s\n"
+        caption += f"📏 Tamaño: {file_size:,} bytes\n"
+        caption += f"🔧 Método usado: {method_used}\n\n"
+        caption += f"🔗 Fuente: {url[:30]}{'...' if len(url) > 30 else ''}"
+
+        # Enviar el video
+        try:
+            with open(video_filepath, 'rb') as video_file:
+                await context.bot.send_video(
+                    chat_id=update.effective_chat.id,
+                    video=video_file,
+                    caption=caption,
+                    supports_streaming=True,
+                )
+
+            # Confirmar envío exitoso
+            method_used = result.get('method', 'desconocido')
+            await processing_msg.edit_text(
+                "✅ Video enviado exitosamente ✨\n\n"
+                f"🎬 {platform} Video\n"
+                f"📹 {title[:50]}{'...' if len(title) > 50 else ''}\n"
+                f"🔧 Método usado: {method_used}\n\n"
+                "🗑️ Archivo temporal eliminado."
+            )
+
+            logger.info(f"Video enviado exitosamente a usuario {user_id} usando método {method_used}")
+
+        except Exception as send_error:
+            logger.error(f"Error enviando video a Telegram: {send_error}")
+            await processing_msg.edit_text(
+                "❌ **Error enviando video**\n\n"
+                f"El video se descargó pero no pudo enviarse a Telegram.\n\n"
+                f"**Error:** {str(send_error)[:100]}...",
+                parse_mode='Markdown'
+            )
+
+        finally:
+            # Limpiar archivo temporal SIEMPRE
+            cleanup_success = video_downloader.cleanup_file(video_filepath)
+            if cleanup_success:
+                logger.info(f"Archivo temporal limpiado: {video_filepath}")
+            else:
+                logger.warning(f"No se pudo limpiar archivo temporal: {video_filepath}")
+
+    except Exception as e:
+        logger.error(f"Error crítico en comando /download para usuario {user_id}: {e}")
+        try:
+            await processing_msg.edit_text(
+                "❌ **Error interno**\n\n"
+                f"Ocurrió un error procesando tu solicitud.\n\n"
+                f"**Detalles técnicos:** {str(e)}\n\n"
+                f"💡 Inténtalo de nuevo en unos minutos.",
+                parse_mode='Markdown'
+            )
+        except:
+            # Fallback si no se puede editar el mensaje
+            await update.message.reply_text(
+                "❌ **Error procesando descarga**\n\n"
+                "Hubo un problema técnico. Inténtalo de nuevo.",
+                parse_mode='Markdown'
+            )
+
+async def handle_social_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador automático para URLs de redes sociales enviadas como mensajes de texto"""
+    user_id = update.effective_user.id
+
+    # Verificar autenticación si está configurada
+    if Config.ALLOWED_USER_ID and str(user_id) != Config.ALLOWED_USER_ID:
+        return  # Silenciosamente ignorar usuarios no autorizados
+
+    message = update.message
+    if not message or not message.text:
+        return
+
+    text = message.text.strip()
+
+    # Buscar URLs en el mensaje usando regex
+    url_pattern = r'https?://(?:[-\w.])+(?:[:\d]+)?(?:/(?:[\w/_.])*(?:\?(?:[\w&=%.])*)?(?:\#(?:[\w.])*)?)?'
+    urls = re.findall(url_pattern, text)
+
+    if not urls:
+        return  # No hay URLs en el mensaje
+
+    # Procesar la primera URL encontrada
+    url = urls[0]
+
+    # Verificar si es una URL de red social soportada
+    if not video_downloader.is_valid_social_url(url):
+        return  # No es una URL soportada, ignorar silenciosamente
+
+    logger.info(f"🎯 URL de red social detectada automáticamente: {url} de usuario {user_id}")
+
+    # Enviar mensaje de procesamiento automático
+    # Usar formato simple sin Markdown para evitar problemas con URLs
+    processing_msg = await update.message.reply_text(
+        "🎬 Descargando video automáticamente...\n\n"
+        f"🔗 URL detectada: {url[:50]}{'...' if len(url) > 50 else ''}\n\n"
+        "🔧 Método: curl_cffi (avanzado) + yt-dlp fallback\n"
+        "⏳ Procesando..."
+    )
+
+    try:
+        # Descargar el video
+        result = video_downloader.download_video(url)
+
+        if not result['success']:
+            await processing_msg.edit_text(
+                f"❌ **Error descargando video**\n\n"
+                f"**Detalles:** {result['error']}\n\n"
+                f"💡 También puedes usar `/download [URL]` para intentar manualmente.",
+                parse_mode='Markdown'
+            )
+            return
+
+        # Información del video descargado
+        video_filepath = result['filepath']
+        title = result.get('title', 'Video sin título')
+        duration = result.get('duration', 0)
+        platform = result.get('platform', 'Desconocido')
+        file_size = result.get('file_size', 0)
+
+        logger.info(f"Video descargado exitosamente: {video_filepath}")
+
+        # Preparar información para enviar
+        # Usar formato simple sin Markdown para evitar problemas con URLs
+        caption = f"🎬 {platform} Video (Auto-descargado)\n\n"
+        caption += f"📹 Título: {title[:100]}{'...' if len(title) > 100 else ''}\n"
+        if duration > 0:
+            caption += f"⏱️ Duración: {duration}s\n"
+        caption += f"📏 Tamaño: {file_size:,} bytes\n"
+        caption += f"🔧 Método usado: {method_used}\n\n"
+        caption += f"🔗 Fuente: {url[:30]}{'...' if len(url) > 30 else ''}"
+
+        # Enviar el video
+        try:
+            with open(video_filepath, 'rb') as video_file:
+                await context.bot.send_video(
+                    chat_id=update.effective_chat.id,
+                    video=video_file,
+                    caption=caption,
+                    supports_streaming=True,
+                )
+
+            # Confirmar envío exitoso
+            method_used = result.get('method', 'desconocido')
+            await processing_msg.edit_text(
+                "✅ Video descargado y enviado automáticamente ✨\n\n"
+                f"🎬 {platform} Video (Auto-descargado)\n"
+                f"📹 {title[:50]}{'...' if len(title) > 50 else ''}\n"
+                f"🔧 Método usado: {method_used}\n\n"
+                "🤖 Detección automática activada."
+            )
+
+            logger.info(f"Video enviado exitosamente por detección automática a usuario {user_id}")
+
+        except Exception as send_error:
+            logger.error(f"Error enviando video por detección automática: {send_error}")
+            await processing_msg.edit_text(
+                "❌ **Error enviando video**\n\n"
+                f"El video se descargó pero no pudo enviarse.\n\n"
+                f"**Error:** {str(send_error)[:100]}...",
+                parse_mode='Markdown'
+            )
+
+        finally:
+            # Limpiar archivo temporal SIEMPRE
+            cleanup_success = video_downloader.cleanup_file(video_filepath)
+            if cleanup_success:
+                logger.info(f"Archivo temporal limpiado: {video_filepath}")
+            else:
+                logger.warning(f"No se pudo limpiar archivo temporal: {video_filepath}")
+
+    except Exception as e:
+        logger.error(f"Error crítico en detección automática para usuario {user_id}: {e}")
+        try:
+            await processing_msg.edit_text(
+                "❌ **Error en descarga automática**\n\n"
+                f"Ocurrió un error procesando la URL.\n\n"
+                f"💡 Usa `/download [URL]` para intentar manualmente.",
+                parse_mode='Markdown'
+            )
+        except:
+            # Fallback si no se puede editar el mensaje
+            await update.message.reply_text(
+                "❌ **Error procesando URL automática**\n\n"
+                "Hubo un problema técnico.",
+                parse_mode='Markdown'
+            )
+
 async def process_video_generation(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                                 processing_msg, wavespeed: WavespeedAPI, request_id: str, prompt: str):
+                                 processing_msg, wavespeed: WavespeedAPI, request_id: str, prompt: str, model: str = 'ultra_fast'):
     """
     Función común para procesar la generación de video (reutilizable para diferentes modos)
     """
@@ -1044,8 +2855,8 @@ async def process_video_generation(update: Update, context: ContextTypes.DEFAULT
 
                                     logger.info(f"🎬 Iniciando descarga de video (intento {download_attempt + 1}/5)")
 
-                                    # Descargar el video con validación
-                                    video_bytes = wavespeed.download_video(video_url)
+                                    # Descargar el video con validación (timeout adaptado al modelo)
+                                    video_bytes = wavespeed.download_video(video_url, model=model)
 
                                     if len(video_bytes) > 1000:  # Verificar que tenga contenido significativo
                                         # Generar nombre único para el video y guardarlo en el volumen
@@ -1056,15 +2867,40 @@ async def process_video_generation(update: Update, context: ContextTypes.DEFAULT
                                         # Preparar el caption del video con el prompt utilizado
                                         video_caption = f"🎬 **Prompt utilizado:**\n{prompt}"
 
-                                        # Enviar el video desde el archivo guardado
-                                        with open(video_filepath, 'rb') as video_file:
-                                            sent_message = await context.bot.send_video(
-                                                chat_id=update.effective_chat.id,
-                                                video=video_file,
-                                                caption=video_caption,
-                                                supports_streaming=True,
-                                                parse_mode='Markdown'
-                                            )
+                                        # Enviar el video desde el archivo guardado con reintentos
+                                        send_attempts = 3  # Máximo 3 intentos para enviar a Telegram
+                                        video_sent_successfully = False
+
+                                        for send_attempt in range(send_attempts):
+                                            try:
+                                                logger.info(f"📤 Enviando video a Telegram (intento {send_attempt + 1}/{send_attempts})")
+
+                                                with open(video_filepath, 'rb') as video_file:
+                                                    sent_message = await context.bot.send_video(
+                                                        chat_id=update.effective_chat.id,
+                                                        video=video_file,
+                                                        caption=video_caption,
+                                                        supports_streaming=True,
+                                                    )
+
+                                                video_sent_successfully = True
+                                                logger.info(f"✅ Video enviado exitosamente a Telegram en intento {send_attempt + 1}")
+                                                break  # Salir del loop si se envió correctamente
+
+                                            except Exception as send_error:
+                                                logger.error(f"❌ Error enviando video a Telegram (intento {send_attempt + 1}): {send_error}")
+
+                                                if send_attempt < send_attempts - 1:  # No es el último intento
+                                                    wait_time = 2 * (send_attempt + 1)  # Espera progresiva: 2s, 4s
+                                                    logger.info(f"⏳ Reintentando envío en {wait_time} segundos...")
+                                                    await asyncio.sleep(wait_time)
+                                                else:
+                                                    # Último intento falló, relanzar el error
+                                                    logger.error("💥 Todos los intentos de envío fallaron")
+                                                    raise send_error
+
+                                        if not video_sent_successfully:
+                                            raise Exception("No se pudo enviar el video a Telegram después de múltiples intentos")
 
                                         # Confirmar envío exitoso
                                         success_msg = "✅ ¡Video enviado exitosamente!"
@@ -1208,6 +3044,7 @@ def main() -> None:
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("models", list_models_command))
+        application.add_handler(CommandHandler("premium", premium_command))
         application.add_handler(CommandHandler("textvideo", handle_text_video))
         application.add_handler(CommandHandler("quality", handle_quality_video))
         application.add_handler(CommandHandler("preview", handle_preview_video))
