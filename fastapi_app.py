@@ -473,9 +473,14 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
         telegram_app = app_state.get("telegram_app")
         if telegram_app:
             logger.info(f"✅ Enviando update {update_id} a procesamiento")
+            logger.info("🔍 Detalles del update a procesar:"            logger.info(f"   Update ID: {update_id}")
+            logger.info(f"   Message: {text}")
+            logger.info(f"   User ID: {user_id}")
             background_tasks.add_task(process_telegram_update, update_data)
         else:
             logger.error("❌ Aplicación de Telegram no inicializada - no se puede procesar")
+            logger.error(f"   app_state keys: {list(app_state.keys())}")
+            logger.error(f"   telegram_app in app_state: {'telegram_app' in app_state}")
             raise HTTPException(status_code=503, detail="Telegram app not ready")
 
         return {"status": "accepted", "update_id": update_id}
@@ -543,9 +548,22 @@ async def process_telegram_update(update_data: Dict[str, Any]):
             logger.info(f"   Tipo: Otro ({type(update).__name__})")
 
         # Procesar la actualización con el bot
-        logger.info(f"   Enviando a telegram_app.process_update()...")
-        await telegram_app.process_update(update)
-        logger.info(f"✅ Update {update_id} procesado correctamente")
+        logger.info(f"   🔄 Enviando a telegram_app.process_update()...")
+        logger.info(f"   📋 Handlers registrados: {len(telegram_app.handlers[0])}")
+
+        try:
+            await telegram_app.process_update(update)
+            logger.info(f"✅ Update {update_id} procesado correctamente por telegram_app")
+
+            # Verificar si se envió respuesta
+            if update.message:
+                logger.info(f"   📤 Verificando si se envió respuesta al mensaje {update.message.message_id}")
+
+        except Exception as process_error:
+            logger.error(f"❌ Error procesando update {update_id}: {process_error}")
+            import traceback
+            logger.error(f"   📄 Traceback: {traceback.format_exc()}")
+            raise
 
     except Exception as e:
         logger.error(f"❌ Error procesando update {update_data.get('update_id')}: {e}")
