@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagnóstico del Bot TELEWAN</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .status-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
+
+        .status-card.success {
+            border-left-color: #28a745;
+            background: #d4edda;
+        }
+
+        .status-card.error {
+            border-left-color: #dc3545;
+            background: #f8d7da;
+        }
+
+        .status-card.warning {
+            border-left-color: #ffc107;
+            background: #fff3cd;
+        }
+
+        .status-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        .status-title::before {
+            content: "🔍";
+            margin-right: 10px;
+        }
+
+        .status-card.success .status-title::before { content: "✅"; }
+        .status-card.error .status-title::before { content: "❌"; }
+        .status-card.warning .status-title::before { content: "⚠️"; }
+
+        .status-details {
+            margin-left: 30px;
+        }
+
+        .detail-item {
+            margin: 5px 0;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+
+        .button {
+            background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 500;
+            transition: transform 0.2s;
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+        }
+
+        .button:active {
+            transform: translateY(0);
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .results {
+            margin-top: 30px;
+        }
+
+        .json-output {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Diagnóstico del Bot TELEWAN</h1>
+            <p>Herramienta automática para identificar problemas del bot de Telegram</p>
+        </div>
+
+        <div class="content">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <button id="runDiagnosis" class="button">
+                    🚀 Ejecutar Diagnóstico Completo
+                </button>
+            </div>
+
+            <div id="loading" class="hidden" style="text-align: center; margin: 20px 0;">
+                <div class="loading"></div>
+                Ejecutando diagnóstico... Esto puede tomar unos segundos.
+            </div>
+
+            <div id="results" class="results hidden">
+                <h2>📊 Resultados del Diagnóstico</h2>
+                <div id="statusCards"></div>
+                <div style="margin-top: 30px;">
+                    <h3>📄 Resultados Detallados (JSON)</h3>
+                    <div id="jsonOutput" class="json-output"></div>
+                </div>
+            </div>
+
+            <div id="instructions" style="background: #e3f2fd; padding: 20px; border-radius: 8px; margin-top: 30px;">
+                <h3>📋 Cómo Usar Esta Herramienta</h3>
+                <ol>
+                    <li><strong>Accede a esta página:</strong> Ve a <code>https://tu-proyecto.up.railway.app/diagnose.html</code></li>
+                    <li><strong>Ejecuta el diagnóstico:</strong> Haz click en "Ejecutar Diagnóstico Completo"</li>
+                    <li><strong>Revisa los resultados:</strong> La herramienta verificará automáticamente:
+                        <ul>
+                            <li>✅ Variables de entorno configuradas</li>
+                            <li>✅ Conectividad con Telegram API</li>
+                            <li>✅ Configuración del webhook</li>
+                            <li>✅ Estado de la aplicación</li>
+                            <li>✅ Endpoint del webhook accesible</li>
+                        </ul>
+                    </li>
+                    <li><strong>Identifica el problema:</strong> Los resultados te dirán exactamente qué está fallando</li>
+                    <li><strong>Comparte los resultados:</strong> Copia la salida JSON para compartir con soporte</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>🔧 Creado para diagnosticar problemas del bot TELEWAN | Versión 1.0</p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('runDiagnosis').addEventListener('click', async () => {
+            const button = document.getElementById('runDiagnosis');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+
+            // Mostrar loading
+            button.disabled = true;
+            button.innerHTML = '⏳ Ejecutando...';
+            loading.classList.remove('hidden');
+            results.classList.add('hidden');
+
+            try {
+                // Hacer petición al endpoint de diagnóstico
+                const response = await fetch('/diagnose');
+                const data = await response.json();
+
+                // Procesar resultados
+                displayResults(data);
+
+                // Mostrar resultados
+                results.classList.remove('hidden');
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error ejecutando diagnóstico: ' + error.message);
+            } finally {
+                // Restaurar botón
+                button.disabled = false;
+                button.innerHTML = '🚀 Ejecutar Diagnóstico Completo';
+                loading.classList.add('hidden');
+            }
+        });
+
+        function displayResults(data) {
+            const statusCards = document.getElementById('statusCards');
+            const jsonOutput = document.getElementById('jsonOutput');
+
+            statusCards.innerHTML = '';
+            jsonOutput.textContent = JSON.stringify(data, null, 2);
+
+            // Crear tarjetas de estado
+            const checks = data.checks || {};
+
+            // Variables
+            if (checks.variables) {
+                const card = createStatusCard('Variables de Entorno', checks.variables);
+                statusCards.appendChild(card);
+            }
+
+            // Aplicación
+            if (checks.application) {
+                const card = createStatusCard('Estado de la Aplicación', checks.application);
+                statusCards.appendChild(card);
+            }
+
+            // Telegram API
+            if (checks.telegram_api) {
+                const card = createStatusCard('API de Telegram', checks.telegram_api);
+                statusCards.appendChild(card);
+            }
+
+            // Webhook
+            if (checks.webhook) {
+                const card = createStatusCard('Configuración del Webhook', checks.webhook);
+                statusCards.appendChild(card);
+            }
+
+            // Endpoint del webhook
+            if (checks.webhook_endpoint) {
+                const card = createStatusCard('Endpoint del Webhook', checks.webhook_endpoint);
+                statusCards.appendChild(card);
+            }
+        }
+
+        function createStatusCard(title, data) {
+            const card = document.createElement('div');
+            card.className = 'status-card';
+
+            // Determinar tipo de estado
+            let status = 'info';
+            if (data.error || data.connected === false || data.reachable === false || data.has_pending) {
+                status = 'error';
+            } else if (data.telegram_token === false || data.webhook_url === false) {
+                status = 'error';
+            } else if (data.pending_updates > 0) {
+                status = 'warning';
+            } else {
+                status = 'success';
+            }
+
+            card.classList.add(status);
+
+            let html = `<div class="status-title">${title}</div>`;
+            html += '<div class="status-details">';
+
+            for (const [key, value] of Object.entries(data)) {
+                let displayValue = value;
+                if (typeof value === 'boolean') {
+                    displayValue = value ? '✅ Sí' : '❌ No';
+                } else if (key.includes('token') && value && value.length > 10) {
+                    displayValue = value.substring(0, 10) + '...';
+                }
+                html += `<div class="detail-item">• ${key}: ${displayValue}</div>`;
+            }
+
+            html += '</div>';
+            card.innerHTML = html;
+
+            return card;
+        }
+    </script>
+</body>
+</html>

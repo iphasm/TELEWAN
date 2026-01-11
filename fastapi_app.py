@@ -325,6 +325,13 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Error inicializando componentes: {e}")
         raise
 
+    # Ejecutar diagnóstico automático al iniciar
+    logger.info("🔍 Ejecutando diagnóstico automático de inicio...")
+    try:
+        await run_startup_diagnosis()
+    except Exception as diag_error:
+        logger.error(f"❌ Error en diagnóstico de inicio: {diag_error}")
+
     yield
 
     # Shutdown: Limpiar recursos en orden inverso
@@ -580,6 +587,87 @@ async def get_stats():
         "timestamp": datetime.now().isoformat()
     }
 
+async def run_startup_diagnosis():
+    """Ejecutar diagnóstico automáticamente al iniciar"""
+    print("\n" + "="*60)
+    print("🔍 DIAGNÓSTICO AUTOMÁTICO DE INICIO")
+    print("="*60)
+
+    try:
+        # Verificar variables críticas
+        print("📋 VERIFICANDO VARIABLES:")
+        token = Config.TELEGRAM_BOT_TOKEN
+        webhook_url = Config.WEBHOOK_URL
+
+        if token:
+            print(f"   ✅ TELEGRAM_BOT_TOKEN: {token[:10]}***")
+        else:
+            print("   ❌ TELEGRAM_BOT_TOKEN: NO CONFIGURADA")
+
+        if webhook_url:
+            print(f"   ✅ WEBHOOK_URL: {webhook_url}")
+        else:
+            print("   ❌ WEBHOOK_URL: NO CONFIGURADA")
+
+        if Config.USE_WEBHOOK:
+            print("   ✅ USE_WEBHOOK: true (modo webhook)")
+        else:
+            print("   ⚠️  USE_WEBHOOK: false (modo polling)")
+
+        # Verificar conectividad con Telegram
+        if token:
+            print("\n🤖 VERIFICANDO CONECTIVIDAD CON TELEGRAM:")
+            try:
+                import requests
+                response = requests.get(f"https://api.telegram.org/bot{token}/getMe", timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('ok'):
+                        bot_username = data['result'].get('username')
+                        print(f"   ✅ Bot conectado: @{bot_username}")
+                    else:
+                        print(f"   ❌ Token inválido: {data.get('description')}")
+                else:
+                    print(f"   ❌ Error HTTP {response.status_code}")
+            except Exception as e:
+                print(f"   ❌ Error conectando: {e}")
+
+        # Verificar webhook si está configurado
+        if token and webhook_url:
+            print("\n🔗 VERIFICANDO CONFIGURACIÓN DEL WEBHOOK:")
+            try:
+                response = requests.get(f"https://api.telegram.org/bot{token}/getWebhookInfo", timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('ok'):
+                        webhook_info = data.get('result', {})
+                        current_url = webhook_info.get('url', '')
+                        pending = webhook_info.get('pending_update_count', 0)
+
+                        if current_url:
+                            expected_url = f"{webhook_url}/webhook" if not webhook_url.endswith('/webhook') else webhook_url
+                            if current_url == expected_url:
+                                print(f"   ✅ Webhook configurado correctamente: {current_url}")
+                            else:
+                                print(f"   ❌ Webhook URL incorrecta: {current_url} (esperada: {expected_url})")
+
+                            if pending > 0:
+                                print(f"   ⚠️  HAY {pending} MENSAJES PENDIENTES - EL BOT NO ESTÁ PROCESANDO")
+                        else:
+                            print("   ❌ NO HAY WEBHOOK CONFIGURADO EN TELEGRAM")
+                    else:
+                        print(f"   ❌ Error obteniendo webhook info: {data.get('description')}")
+                else:
+                    print(f"   ❌ Error HTTP {response.status_code}")
+            except Exception as e:
+                print(f"   ❌ Error verificando webhook: {e}")
+
+        print("\n✅ DIAGNÓSTICO DE INICIO COMPLETADO")
+        print("📊 Revisa los logs de Railway para ver los resultados detallados")
+
+    except Exception as e:
+        print(f"❌ Error en diagnóstico de inicio: {e}")
+
 @app.get("/debug", tags=["Debug"])
 async def debug_info():
     """Información de debug para troubleshooting"""
@@ -602,6 +690,247 @@ async def debug_info():
             "telegram_error": app_state.get("telegram_error")
         }
     }
+
+@app.get("/diagnose", tags=["Diagnosis"])
+async def run_live_diagnosis():
+    """Endpoint de diagnóstico accesible via web"""
+    print("\n🔍 EJECUTANDO DIAGNÓSTICO VIA WEB ENDPOINT")
+    print("="*50)
+
+    diagnosis_results = {
+        "timestamp": datetime.now().isoformat(),
+        "status": "running",
+        "checks": {}
+    }
+
+    try:
+        # Verificar variables
+        diagnosis_results["checks"]["variables"] = {
+            "telegram_token": bool(Config.TELEGRAM_BOT_TOKEN),
+            "webhook_url": bool(Config.WEBHOOK_URL),
+            "use_webhook": Config.USE_WEBHOOK,
+            "wavespeed_key": bool(Config.WAVESPEED_API_KEY)
+        }
+
+        print("📋 Variables verificadas")
+
+        # Verificar aplicación
+        diagnosis_results["checks"]["application"] = {
+            "telegram_app_initialized": app_state.get("telegram_app") is not None,
+            "processed_updates": app_state.get("processed_updates", 0),
+            "has_error": bool(app_state.get("error")),
+            "has_telegram_error": bool(app_state.get("telegram_error"))
+        }
+
+        print("🏥 Estado de aplicación verificado")
+
+        # Verificar Telegram API
+        if Config.TELEGRAM_BOT_TOKEN:
+            try:
+                import requests
+                response = requests.get(f"https://api.telegram.org/bot{Config.TELEGRAM_BOT_TOKEN}/getMe", timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('ok'):
+                        diagnosis_results["checks"]["telegram_api"] = {
+                            "connected": True,
+                            "bot_username": data['result'].get('username'),
+                            "bot_id": data['result'].get('id')
+                        }
+                        print("🤖 API de Telegram OK")
+                    else:
+                        diagnosis_results["checks"]["telegram_api"] = {
+                            "connected": False,
+                            "error": data.get('description')
+                        }
+                else:
+                    diagnosis_results["checks"]["telegram_api"] = {
+                        "connected": False,
+                        "error": f"HTTP {response.status_code}"
+                    }
+            except Exception as e:
+                diagnosis_results["checks"]["telegram_api"] = {
+                    "connected": False,
+                    "error": str(e)
+                }
+        else:
+            diagnosis_results["checks"]["telegram_api"] = {
+                "connected": False,
+                "error": "No token configured"
+            }
+
+        # Verificar webhook
+        if Config.TELEGRAM_BOT_TOKEN and Config.WEBHOOK_URL:
+            try:
+                response = requests.get(f"https://api.telegram.org/bot{Config.TELEGRAM_BOT_TOKEN}/getWebhookInfo", timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('ok'):
+                        webhook_info = data.get('result', {})
+                        current_url = webhook_info.get('url', '')
+                        pending = webhook_info.get('pending_update_count', 0)
+
+                        expected_url = Config.WEBHOOK_URL
+                        if not expected_url.endswith('/webhook'):
+                            expected_url += '/webhook'
+
+                        diagnosis_results["checks"]["webhook"] = {
+                            "configured": bool(current_url),
+                            "current_url": current_url,
+                            "expected_url": expected_url,
+                            "url_matches": current_url == expected_url,
+                            "pending_updates": pending,
+                            "has_pending": pending > 0
+                        }
+
+                        print("🔗 Webhook verificado")
+                    else:
+                        diagnosis_results["checks"]["webhook"] = {
+                            "configured": False,
+                            "error": data.get('description')
+                        }
+                else:
+                    diagnosis_results["checks"]["webhook"] = {
+                        "configured": False,
+                        "error": f"HTTP {response.status_code}"
+                    }
+            except Exception as e:
+                diagnosis_results["checks"]["webhook"] = {
+                    "configured": False,
+                    "error": str(e)
+                }
+        else:
+            diagnosis_results["checks"]["webhook"] = {
+                "configured": False,
+                "error": "Missing token or webhook URL"
+            }
+
+        # Probar endpoint del webhook
+        if Config.WEBHOOK_URL:
+            try:
+                webhook_url = Config.WEBHOOK_URL
+                if not webhook_url.startswith('http'):
+                    webhook_url = f"https://{webhook_url}"
+
+                health_url = f"{webhook_url}/health"
+                response = requests.get(health_url, timeout=5)
+
+                if response.status_code == 200:
+                    data = response.json()
+                    diagnosis_results["checks"]["webhook_endpoint"] = {
+                        "reachable": True,
+                        "status": data.get('status'),
+                        "telegram_bot_status": data.get('components', {}).get('telegram_bot')
+                    }
+                    print("🌐 Endpoint del webhook accesible")
+                else:
+                    diagnosis_results["checks"]["webhook_endpoint"] = {
+                        "reachable": False,
+                        "error": f"HTTP {response.status_code}"
+                    }
+            except Exception as e:
+                diagnosis_results["checks"]["webhook_endpoint"] = {
+                    "reachable": False,
+                    "error": str(e)
+                }
+        else:
+            diagnosis_results["checks"]["webhook_endpoint"] = {
+                "reachable": False,
+                "error": "No webhook URL"
+            }
+
+        # Calcular estado general
+        all_checks = diagnosis_results["checks"]
+        has_critical_errors = (
+            not all_checks.get("variables", {}).get("telegram_token", False) or
+            not all_checks.get("telegram_api", {}).get("connected", False) or
+            not all_checks.get("webhook", {}).get("configured", False) or
+            all_checks.get("webhook", {}).get("has_pending", False) or
+            not all_checks.get("webhook_endpoint", {}).get("reachable", False)
+        )
+
+        diagnosis_results["status"] = "error" if has_critical_errors else "ok"
+
+        print("✅ Diagnóstico completado via web")
+        print(f"📊 Estado: {diagnosis_results['status']}")
+
+        return diagnosis_results
+
+    except Exception as e:
+        print(f"❌ Error en diagnóstico web: {e}")
+        diagnosis_results["status"] = "error"
+        diagnosis_results["error"] = str(e)
+        return diagnosis_results
+
+@app.get("/diagnose/text", tags=["Diagnosis"])
+async def diagnose_text():
+    """Diagnóstico en formato texto simple (para curl)"""
+    lines = ["🔍 DIAGNÓSTICO DEL BOT TELEWAN", "="*50]
+
+    try:
+        # Variables
+        lines.append("📋 VARIABLES:")
+        lines.append(f"   TELEGRAM_BOT_TOKEN: {'✅' if Config.TELEGRAM_BOT_TOKEN else '❌'}")
+        lines.append(f"   WEBHOOK_URL: {'✅' if Config.WEBHOOK_URL else '❌'}")
+        lines.append(f"   USE_WEBHOOK: {'✅' if Config.USE_WEBHOOK else '❌'}")
+
+        # Aplicación
+        lines.append("\n🏥 APLICACIÓN:")
+        lines.append(f"   Telegram App: {'✅' if app_state.get('telegram_app') else '❌'}")
+        lines.append(f"   Updates procesados: {app_state.get('processed_updates', 0)}")
+
+        # Telegram API
+        if Config.TELEGRAM_BOT_TOKEN:
+            lines.append("\n🤖 TELEGRAM API:")
+            try:
+                import requests
+                response = requests.get(f"https://api.telegram.org/bot{Config.TELEGRAM_BOT_TOKEN}/getMe", timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('ok'):
+                        bot_username = data['result'].get('username')
+                        lines.append(f"   Conectado: ✅ (@{bot_username})")
+                    else:
+                        lines.append(f"   Conectado: ❌ ({data.get('description')})")
+                else:
+                    lines.append(f"   Conectado: ❌ (HTTP {response.status_code})")
+            except Exception as e:
+                lines.append(f"   Conectado: ❌ ({str(e)})")
+        else:
+            lines.append("\n🤖 TELEGRAM API: ❌ (No token)")
+
+        # Webhook
+        if Config.TELEGRAM_BOT_TOKEN and Config.WEBHOOK_URL:
+            lines.append("\n🔗 WEBHOOK:")
+            try:
+                response = requests.get(f"https://api.telegram.org/bot{Config.TELEGRAM_BOT_TOKEN}/getWebhookInfo", timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('ok'):
+                        webhook_info = data.get('result', {})
+                        current_url = webhook_info.get('url', '')
+                        pending = webhook_info.get('pending_update_count', 0)
+
+                        if current_url:
+                            expected_url = Config.WEBHOOK_URL
+                            if not expected_url.endswith('/webhook'):
+                                expected_url += '/webhook'
+                            url_ok = current_url == expected_url
+                            lines.append(f"   Configurado: ✅"                            lines.append(f"   URL correcta: {'✅' if url_ok else '❌'}")
+                            if pending > 0:
+                                lines.append(f"   Mensajes pendientes: ⚠️ ({pending})")
+                        else:
+                            lines.append("   Configurado: ❌"
+            except Exception as e:
+                lines.append(f"   Error: ❌ ({str(e)})")
+        else:
+            lines.append("\n🔗 WEBHOOK: ❌ (Faltan credenciales)")
+
+        lines.append("\n✅ DIAGNÓSTICO COMPLETADO")
+        return {"diagnosis": "\n".join(lines)}
+
+    except Exception as e:
+        return {"diagnosis": f"❌ Error en diagnóstico: {str(e)}"}
 
 # Función de procesamiento de video (migrada de web_app.py)
 async def process_video_generation(task_id: str):
@@ -673,6 +1002,15 @@ async def root():
             return f.read()
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="index.html not found")
+
+@app.get("/diagnose.html", response_class=HTMLResponse, tags=["Diagnosis"])
+async def diagnose_page():
+    """Serve the diagnosis web interface"""
+    try:
+        with open("diagnose.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="diagnose.html not found")
 
 @app.post("/generate", tags=["Video Generation"])
 async def generate_video(
