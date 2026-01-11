@@ -669,6 +669,11 @@ async def run_startup_diagnosis():
     except Exception as e:
         print(f"❌ Error en diagnóstico de inicio: {e}")
 
+@app.get("/test", tags=["Test"])
+async def test_endpoint():
+    """Endpoint de prueba simple"""
+    return {"status": "ok", "message": "Test endpoint working", "timestamp": datetime.now().isoformat()}
+
 @app.get("/debug", tags=["Debug"])
 async def debug_info():
     """Información de debug para troubleshooting"""
